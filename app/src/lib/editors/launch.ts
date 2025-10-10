@@ -6,6 +6,7 @@ import {
   ICustomIntegration,
   parseCustomIntegrationArguments,
 } from '../custom-integration'
+import { isWSLPath, convertWSLPathToLinux } from '../wsl-path'
 
 async function launchEditor(
   editorPath: string,
@@ -58,8 +59,61 @@ async function launchEditor(
  * @param fullPath A folder or file path to pass as an argument when launching the editor.
  * @param editor The external editor to launch.
  */
-export const launchExternalEditor = (fullPath: string, editor: FoundEditor) =>
-  launchEditor(editor.path, [fullPath], `'${editor.editor}'`, __DARWIN__)
+export const launchExternalEditor = async (
+  fullPath: string,
+  editor: FoundEditor
+) => {
+  // On Windows, if this is a WSL path and the editor is VS Code, use wsl code
+  if (__WIN32__ && isWSLPath(fullPath)) {
+    try {
+      const linuxPath = convertWSLPathToLinux(fullPath)
+
+      // Check if this is VS Code (which has great WSL support via Remote-WSL extension)
+      const editorName = editor.editor.toLowerCase()
+      if (
+        editorName.includes('visual studio code') ||
+        editorName.includes('vscode') ||
+        editorName.includes('code')
+      ) {
+        log.info(
+          `Opening WSL path in ${editor.editor} using 'wsl code': path="${linuxPath}"`
+        )
+
+        // Use wsl code to open VS Code from within WSL
+        return new Promise<void>((resolve, reject) => {
+          const opts: SpawnOptions = {
+            detached: true,
+            stdio: 'ignore',
+          }
+
+          const child = spawn('wsl', ['code', linuxPath], opts)
+
+          child.on('error', reject)
+          child.on('spawn', resolve)
+          child.unref()
+        }).catch((e: unknown) => {
+          log.error(
+            `Error while launching ${editor.editor} with wsl code`,
+            e instanceof Error ? e : undefined
+          )
+          // Fall back to regular method
+          return launchEditor(editor.path, [fullPath], `'${editor.editor}'`, __DARWIN__)
+        })
+      }
+
+      log.info(
+        `Opening WSL path in ${editor.editor}: path="${fullPath}"`
+      )
+    } catch (error) {
+      log.error(
+        `Failed to convert WSL path for ${editor.editor}:`,
+        error instanceof Error ? error : undefined
+      )
+    }
+  }
+
+  return launchEditor(editor.path, [fullPath], `'${editor.editor}'`, __DARWIN__)
+}
 
 /**
  * Open a given file or folder in the desired custom external editor.
@@ -67,14 +121,31 @@ export const launchExternalEditor = (fullPath: string, editor: FoundEditor) =>
  * @param fullPath A folder or file path to pass as an argument when launching the editor.
  * @param customEditor The external editor to launch.
  */
-export const launchCustomExternalEditor = (
+export const launchCustomExternalEditor = async (
   fullPath: string,
   customEditor: ICustomIntegration
 ) => {
+  let editorPath = fullPath
+
+  // On Windows, if this is a WSL path, handle it appropriately
+  if (__WIN32__ && isWSLPath(fullPath)) {
+    try {
+      const linuxPath = convertWSLPathToLinux(fullPath)
+      log.info(
+        `Opening WSL path in custom editor: original="${fullPath}", linux="${linuxPath}"`
+      )
+      // Use the UNC path as-is for custom editors
+      editorPath = fullPath
+    } catch (error) {
+      log.error(`Failed to process WSL path for custom editor:`, error instanceof Error ? error : undefined)
+      editorPath = fullPath
+    }
+  }
+
   const argv = parseCustomIntegrationArguments(customEditor.arguments)
 
-  // Replace instances of RepoPathArgument with fullPath in customEditor.arguments
-  const args = expandTargetPathArgument(argv, fullPath)
+  // Replace instances of RepoPathArgument with editorPath in customEditor.arguments
+  const args = expandTargetPathArgument(argv, editorPath)
 
   // In macOS we can use `open` if it's an app (i.e. if we have a bundleID),
   // which will open the right executable file for us, we only need the path

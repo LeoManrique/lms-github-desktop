@@ -118,7 +118,7 @@ if (__DARWIN__) {
 // On Windows, in order to get notifications properly working for dev builds,
 // we'll want to set the right App User Model ID from production builds.
 if (__WIN32__ && __DEV__) {
-  app.setAppUserModelId('com.squirrel.GitHubDesktop.GitHubDesktop')
+  app.setAppUserModelId('com.squirrel.GitHubDesktop.LMSGitHubDesktop')
 }
 
 app.on('window-all-closed', () => {

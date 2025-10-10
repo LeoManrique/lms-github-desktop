@@ -106,7 +106,7 @@ export async function launchShell(
   if (__DARWIN__) {
     cp = Darwin.launch(shell as FoundShell<Darwin.Shell>, path)
   } else if (__WIN32__) {
-    cp = Win32.launch(shell as FoundShell<Win32.Shell>, path)
+    cp = await Win32.launch(shell as FoundShell<Win32.Shell>, path)
   } else if (__LINUX__) {
     cp = Linux.launch(shell as FoundShell<Linux.Shell>, path)
   }
@@ -143,7 +143,7 @@ export async function launchCustomShell(
   if (__DARWIN__) {
     cp = Darwin.launchCustomShell(customShell, path)
   } else if (__WIN32__) {
-    cp = Win32.launchCustomShell(customShell, path)
+    cp = await Win32.launchCustomShell(customShell, path)
   } else if (__LINUX__) {
     cp = Linux.launchCustomShell(customShell, path)
   }
