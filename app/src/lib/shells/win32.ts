@@ -13,6 +13,7 @@ import {
   parseCustomIntegrationArguments,
   spawnCustomIntegration,
 } from '../custom-integration'
+import { isWSLPath, convertWSLPathToLinux, getWSLDistro } from '../wsl-path'
 
 export enum Shell {
   Cmd = 'Command Prompt',
@@ -397,30 +398,55 @@ async function findFluentTerminal(): Promise<string | null> {
   return null
 }
 
-export function launch(
+export async function launch(
   foundShell: FoundShell<Shell>,
   path: string
-): ChildProcess {
+): Promise<ChildProcess> {
   const shell = foundShell.shell
+
+  // Check if this is a WSL path and prepare appropriate paths for different shells
+  let linuxPath = path
+  let wslDistro: string | null = null
+
+  if (isWSLPath(path)) {
+    wslDistro = getWSLDistro(path)
+    try {
+      // Convert to Linux path for WSL shells
+      linuxPath = convertWSLPathToLinux(path)
+      log.info(
+        `WSL path detected: UNC="${path}", Linux="${linuxPath}"`
+      )
+    } catch (error) {
+      log.error(`Failed to convert WSL path for ${shell}:`, error)
+      // Fall back to original path
+      linuxPath = path
+    }
+  }
 
   switch (shell) {
     case Shell.PowerShell:
-      return spawn('START', ['"PowerShell"', `"${foundShell.path}"`], {
-        shell: true,
-        cwd: path,
-      })
+      // PowerShell needs the FileSystem provider path for WSL UNC paths
+      const psPath = isWSLPath(path) ? `Microsoft.PowerShell.Core\\FileSystem::${path}` : path
+      return spawn(
+        'START',
+        ['"PowerShell"', `"${foundShell.path}"`, '-NoExit', '-Command', `"Set-Location '${psPath}'"`],
+        {
+          shell: true,
+        }
+      )
     case Shell.PowerShellCore:
+      const psCorePath = isWSLPath(path) ? `Microsoft.PowerShell.Core\\FileSystem::${path}` : path
       return spawn(
         'START',
         [
           '"PowerShell Core"',
           `"${foundShell.path}"`,
+          '-NoExit',
           '-WorkingDirectory',
-          `"${path}"`,
+          `"${psCorePath}"`,
         ],
         {
           shell: true,
-          cwd: path,
         }
       )
     case Shell.Hyper:
@@ -456,10 +482,34 @@ export function launch(
         }
       )
     case Shell.WSL:
-      return spawn('START', ['"WSL"', `"${foundShell.path}"`], {
-        shell: true,
-        cwd: path,
-      })
+      // For WSL, we need to use the Linux path and optionally specify the distro
+      if (wslDistro) {
+        log.info(
+          `launching ${shell} with distro ${wslDistro} at path: ${linuxPath}`
+        )
+        return spawn(
+          'START',
+          [
+            '"WSL"',
+            `"${foundShell.path}"`,
+            '-d',
+            wslDistro,
+            '--cd',
+            `"${linuxPath}"`,
+          ],
+          {
+            shell: true,
+          }
+        )
+      } else {
+        return spawn(
+          'START',
+          ['"WSL"', `"${foundShell.path}"`, '--cd', `"${linuxPath}"`],
+          {
+            shell: true,
+          }
+        )
+      }
     case Shell.Cmd:
       return spawn(
         'START',
@@ -471,8 +521,19 @@ export function launch(
       )
     case Shell.WindowsTerminal:
       const windowsTerminalPath = `"${foundShell.path}"`
-      log.info(`launching ${shell} at path: ${windowsTerminalPath}`)
-      return spawn(windowsTerminalPath, ['-d .'], { shell: true, cwd: path })
+      // Windows Terminal supports UNC WSL paths natively
+      if (isWSLPath(path)) {
+        log.info(`launching ${shell} in WSL directory: ${path}`)
+        return spawn(windowsTerminalPath, ['-d', `"${path}"`], {
+          shell: true,
+        })
+      } else {
+        log.info(`launching ${shell} in directory: ${path}`)
+        return spawn(windowsTerminalPath, ['-d', '.'], {
+          shell: true,
+          cwd: path,
+        })
+      }
     case Shell.FluentTerminal:
       const fluentTerminalPath = `"${foundShell.path}"`
       log.info(`launching ${shell} at path: ${fluentTerminalPath}`)
@@ -482,15 +543,31 @@ export function launch(
   }
 }
 
-export function launchCustomShell(
+export async function launchCustomShell(
   customShell: ICustomIntegration,
   path: string
-): ChildProcess {
+): Promise<ChildProcess> {
   log.info(`launching custom shell at path: ${customShell.path}`)
+
+  // Check if this is a WSL path and convert it if necessary
+  let linuxPath = path
+  if (isWSLPath(path)) {
+    try {
+      linuxPath = convertWSLPathToLinux(path)
+      log.info(
+        `Converted WSL path from "${path}" to "${linuxPath}" for custom shell`
+      )
+    } catch (error) {
+      log.error(`Failed to convert WSL path for custom shell:`, error)
+      // Fall back to original path
+      linuxPath = path
+    }
+  }
+
   const argv = parseCustomIntegrationArguments(customShell.arguments)
-  const args = expandTargetPathArgument(argv, path)
+  const args = expandTargetPathArgument(argv, linuxPath)
   return spawnCustomIntegration(`"${customShell.path}"`, args, {
     shell: true,
-    cwd: path,
+    cwd: isWSLPath(path) ? undefined : linuxPath,
   })
 }

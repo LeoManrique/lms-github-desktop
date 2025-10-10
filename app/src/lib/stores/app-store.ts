@@ -11,6 +11,7 @@ import {
   SignInStore,
   UpstreamRemoteName,
 } from '.'
+import { isWSLPath } from '../wsl-path'
 import { Account, isDotComAccount } from '../../models/account'
 import { AppMenu, IMenu } from '../../models/app-menu'
 import { Author } from '../../models/author'
@@ -2548,11 +2549,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       askForConfirmationOnForcePush,
     } = this
 
+    const isWSLRepository =
+      selectedRepository instanceof Repository &&
+      isWSLPath(selectedRepository.path)
+
     const labels: MenuLabelsEvent = {
       selectedShell: useCustomShell ? null : selectedShell,
       selectedExternalEditor: useCustomEditor ? null : selectedExternalEditor,
       askForConfirmationOnRepositoryRemoval,
       askForConfirmationOnForcePush,
+      isWSLRepository,
     }
 
     if (state === null) {
@@ -5843,6 +5849,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
         const match = await findShellOrDefault(this.selectedShell)
         await launchShell(match, path, error => this._pushError(error))
       }
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
+  /** Opens WSL shell specifically. This shouldn't be called directly. See `Dispatcher`. */
+  public async _openWSL(path: string) {
+    this.statsStore.increment('openShellCount')
+
+    try {
+      const { Shell } = await import('../shells/win32')
+      const wslShell = await findShellOrDefault(Shell.WSL)
+      await launchShell(wslShell, path, error => this._pushError(error))
     } catch (error) {
       this.emitError(error)
     }
