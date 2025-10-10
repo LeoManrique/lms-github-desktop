@@ -1466,6 +1466,24 @@ export class Dispatcher {
   }
 
   /**
+   * Opens a path in WSL shell (always uses WSL, regardless of user's selected shell).
+   */
+  public async openWSL(
+    path: string,
+    ignoreWarning: boolean = false
+  ): Promise<void> {
+    const gitFound = await isGitOnPath()
+    if (gitFound || ignoreWarning) {
+      this.appStore._openWSL(path)
+    } else {
+      this.appStore._showPopup({
+        type: PopupType.InstallGit,
+        path,
+      })
+    }
+  }
+
+  /**
    * Opens a path in the external editor selected by the user.
    */
   public async openInExternalEditor(fullPath: string): Promise<void> {

@@ -1,19 +1,19 @@
 {
-  "name": "desktop",
-  "productName": "GitHub Desktop",
-  "bundleID": "com.github.GitHubClient",
-  "companyName": "GitHub, Inc.",
+  "name": "lms-desktop",
+  "productName": "LMS GitHub Desktop",
+  "bundleID": "com.leonardomanrique.GitHubClient",
+  "companyName": "Leonardo Manrique",
   "version": "3.5.4",
   "main": "./main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/desktop/desktop.git"
+    "url": "https://github.com/LeoManrique/lms-github-desktop.git"
   },
   "description": "Simple collaboration from your desktop",
   "author": {
-    "name": "GitHub, Inc.",
-    "email": "opensource+desktop@github.com",
-    "url": "https://desktop.github.com/"
+    "name": "Leonardo Manrique",
+    "email": "leomanrique0502@gmail.com",
+    "url": "https://github.com/LeoManrique/lms-github-desktop"
   },
   "license": "MIT",
   "dependencies": {

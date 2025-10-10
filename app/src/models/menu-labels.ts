@@ -67,4 +67,10 @@ export type MenuLabelsEvent = {
    * says "Show changes filter" or "Hide changes filter".
    */
   readonly isChangesFilterVisible?: boolean
+
+  /**
+   * Whether the current repository is in WSL.
+   * When true, both WSL and PowerShell shell options will be shown in the menu.
+   */
+  readonly isWSLRepository?: boolean
 }

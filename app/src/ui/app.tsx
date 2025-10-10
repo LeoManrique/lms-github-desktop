@@ -500,6 +500,8 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.openIssueCreationOnGitHub()
       case 'open-in-shell':
         return this.openCurrentRepositoryInShell()
+      case 'open-in-wsl':
+        return this.openCurrentRepositoryInWSL()
       case 'clone-repository':
         return this.showCloneRepo()
       case 'show-about':
@@ -1307,6 +1309,15 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     this.openInShell(repository)
+  }
+
+  private openCurrentRepositoryInWSL = () => {
+    const repository = this.getRepository()
+    if (!repository) {
+      return
+    }
+
+    this.openInWSL(repository)
   }
 
   /**
@@ -2915,6 +2926,14 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     this.props.dispatcher.openShell(repository.path)
+  }
+
+  private openInWSL = (repository: Repository | CloningRepository) => {
+    if (!(repository instanceof Repository)) {
+      return
+    }
+
+    this.props.dispatcher.openWSL(repository.path)
   }
 
   private openFileInExternalEditor = (fullPath: string) => {
