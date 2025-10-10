@@ -1,9 +1,9 @@
 {
   "repository": {
     "type": "git",
-    "url": "https://github.com/desktop/desktop.git"
+    "url": "https://github.com/LeoManrique/lms-github-desktop.git"
   },
-  "description": "GitHub Desktop build dependencies",
+  "description": "LMS GitHub Desktop build dependencies",
   "scripts": {
     "cli": "ts-node app/src/cli/main.ts",
     "check:eslint": "tsc -P eslint-rules/",
@@ -41,9 +41,9 @@
     "validate-changelog": "ts-node -P script/tsconfig.json script/validate-changelog.ts"
   },
   "author": {
-    "name": "GitHub, Inc.",
-    "email": "opensource+desktop@github.com",
-    "url": "https://desktop.github.com/"
+    "name": "Leonardo Manrique",
+    "email": "leomanrique0502@gmail.com",
+    "url": "https://github.com/LeoManrique/lms-github-desktop"
   },
   "license": "MIT",
   "engines": {

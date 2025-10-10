@@ -47,6 +47,7 @@ export function buildDefaultMenu({
   isStashedChangesVisible = false,
   askForConfirmationWhenStashingAllChanges = true,
   isChangesFilterVisible = true,
+  isWSLRepository = false,
 }: MenuLabelsEvent): Electron.Menu {
   contributionTargetDefaultBranch = truncateWithEllipsis(
     contributionTargetDefaultBranch,
@@ -339,12 +340,24 @@ export function buildDefaultMenu({
         accelerator: 'CmdOrCtrl+Shift+G',
         click: emit('view-repository-on-github'),
       },
+      // For WSL repositories on Windows, show WSL option first
+      ...(isWSLRepository && __WIN32__
+        ? [
+            {
+              label: 'Open in &WSL',
+              id: 'open-in-wsl',
+              accelerator: 'Ctrl+`',
+              click: emit('open-in-wsl'),
+            },
+          ]
+        : []),
+      // Always show the selected shell option
       {
         label: __DARWIN__
           ? `Open in ${selectedShell ?? 'Shell'}`
           : `O&pen in ${selectedShell ?? 'shell'}`,
         id: 'open-in-shell',
-        accelerator: 'Ctrl+`',
+        accelerator: isWSLRepository && __WIN32__ ? undefined : 'Ctrl+`',
         click: emit('open-in-shell'),
       },
       {
@@ -360,7 +373,12 @@ export function buildDefaultMenu({
       {
         label: __DARWIN__
           ? `Open in ${selectedExternalEditor ?? 'External Editor'}`
-          : `&Open in ${selectedExternalEditor ?? 'external editor'}`,
+          : `&Open in ${
+              isWSLRepository &&
+              selectedExternalEditor?.includes('Visual Studio Code')
+                ? 'WSL VS Code'
+                : selectedExternalEditor ?? 'external editor'
+            }`,
         id: 'open-external-editor',
         accelerator: 'CmdOrCtrl+Shift+A',
         click: emit('open-external-editor'),
