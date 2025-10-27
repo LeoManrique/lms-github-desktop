@@ -373,12 +373,21 @@ export function buildDefaultMenu({
       {
         label: __DARWIN__
           ? `Open in ${selectedExternalEditor ?? 'External Editor'}`
-          : `&Open in ${
-              isWSLRepository &&
-              selectedExternalEditor?.includes('Visual Studio Code')
-                ? 'WSL VS Code'
-                : selectedExternalEditor ?? 'external editor'
-            }`,
+          : (() => {
+              if (!isWSLRepository) {
+                return `&Open in ${selectedExternalEditor ?? 'external editor'}`
+              }
+              
+              if (selectedExternalEditor?.includes('Visual Studio Code')) {
+                return '&Open in WSL VS Code'
+              }
+              
+              if (selectedExternalEditor?.includes('Cursor')) {
+                return `&Open in WSL ${selectedExternalEditor}`
+              }
+              
+              return `&Open in ${selectedExternalEditor ?? 'external editor'}`
+            })(),
         id: 'open-external-editor',
         accelerator: 'CmdOrCtrl+Shift+A',
         click: emit('open-external-editor'),
