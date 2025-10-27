@@ -63,37 +63,41 @@ export const launchExternalEditor = async (
   fullPath: string,
   editor: FoundEditor
 ) => {
-  // On Windows, if this is a WSL path and the editor is VS Code, use wsl code
+  // On Windows, if this is a WSL path and the editor is VS Code or Cursor, use wsl code
   if (__WIN32__ && isWSLPath(fullPath)) {
     try {
       const linuxPath = convertWSLPathToLinux(fullPath)
 
-      // Check if this is VS Code (which has great WSL support via Remote-WSL extension)
+      // Check if this is VS Code or Cursor (which have great WSL support via Remote-WSL extension)
       const editorName = editor.editor.toLowerCase()
       if (
         editorName.includes('visual studio code') ||
         editorName.includes('vscode') ||
-        editorName.includes('code')
+        editorName.includes('code') ||
+        editorName.includes('cursor')
       ) {
+        // Determine the appropriate WSL command based on the editor
+        const wslCommand = editorName.includes('cursor') ? 'cursor' : 'code'
+        
         log.info(
-          `Opening WSL path in ${editor.editor} using 'wsl code': path="${linuxPath}"`
+          `Opening WSL path in ${editor.editor} using 'wsl ${wslCommand}': path="${linuxPath}"`
         )
 
-        // Use wsl code to open VS Code from within WSL
+        // Use wsl code or wsl cursor to open the editor from within WSL
         return new Promise<void>((resolve, reject) => {
           const opts: SpawnOptions = {
             detached: true,
             stdio: 'ignore',
           }
 
-          const child = spawn('wsl', ['code', linuxPath], opts)
+          const child = spawn('wsl', [wslCommand, linuxPath], opts)
 
           child.on('error', reject)
           child.on('spawn', resolve)
           child.unref()
         }).catch((e: unknown) => {
           log.error(
-            `Error while launching ${editor.editor} with wsl code`,
+            `Error while launching ${editor.editor} with wsl ${wslCommand}`,
             e instanceof Error ? e : undefined
           )
           // Fall back to regular method
