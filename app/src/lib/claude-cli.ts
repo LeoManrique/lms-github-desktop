@@ -110,7 +110,7 @@ export async function invokeClaude(
 
     if (isWindows) {
       command = 'wsl'
-      args = ['bash', '-i', '-c', 'claude --print --output-format json --model "haiku"']
+      args = ['bash', '-i', '-c', 'claude --print --output-format json --model haiku']
     } else {
       command = 'claude'
       args = ['--print', '--output-format', 'json', '--model', 'haiku']
