@@ -1077,11 +1077,13 @@ export class Dispatcher {
 
   public promptOverrideWithGeneratedCommitMessage(
     repository: Repository,
-    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    provider?: 'copilot' | 'claude' | 'ollama'
   ) {
     return this.appStore._promptOverrideWithGeneratedCommitMessage(
       repository,
-      filesSelected
+      filesSelected,
+      provider
     )
   }
 
@@ -1094,6 +1096,22 @@ export class Dispatcher {
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
   ) {
     return this.appStore._generateCommitMessage(repository, filesSelected)
+  }
+
+  /**
+   * Generate commit message using an alternative provider (Claude or Ollama).
+   * This is the unified method for all alternative providers.
+   */
+  public generateCommitMessageWithAlternativeProvider(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    providerId: 'claude' | 'ollama'
+  ) {
+    return this.appStore._generateCommitMessageWithAlternativeProvider(
+      repository,
+      filesSelected,
+      providerId
+    )
   }
 
   /** Remove the given account from the app. */

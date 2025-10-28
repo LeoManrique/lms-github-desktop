@@ -12,6 +12,12 @@ export interface ICommitMessage {
    * not present, it's assumed to be false.
    */
   readonly generatedByCopilot?: boolean
+  /**
+   * Which alternative provider generated this commit message (if any).
+   * Note: This does NOT include Copilot - Copilot uses generatedByCopilot flag.
+   * This is for our fork's alternative providers: Claude, Ollama, etc.
+   */
+  readonly generatedByAlternativeProvider?: 'claude' | 'ollama'
 }
 
 export const DefaultCommitMessage: ICommitMessage = {

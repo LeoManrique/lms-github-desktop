@@ -968,6 +968,9 @@ export class FilterChangesList extends React.Component<
         }
         onPersistCommitMessage={this.onPersistCommitMessage}
         onGenerateCommitMessage={this.onGenerateCommitMessage}
+        onGenerateCommitMessageWithAlternativeProvider={
+          this.onGenerateCommitMessageWithAlternativeProvider
+        }
         onCommitMessageFocusSet={this.onCommitMessageFocusSet}
         onRefreshAuthor={this.onRefreshAuthor}
         onShowPopup={this.onShowPopup}
@@ -1028,6 +1031,27 @@ export class FilterChangesList extends React.Component<
       : this.props.dispatcher.generateCommitMessage(
           this.props.repository,
           filesSelected
+        )
+  }
+
+  /**
+   * Unified handler for alternative provider commit message generation.
+   */
+  private onGenerateCommitMessageWithAlternativeProvider = (
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    mustOverrideExistingMessage: boolean,
+    providerId: 'claude' | 'ollama'
+  ) => {
+    return mustOverrideExistingMessage
+      ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
+          this.props.repository,
+          filesSelected,
+          providerId
+        )
+      : this.props.dispatcher.generateCommitMessageWithAlternativeProvider(
+          this.props.repository,
+          filesSelected,
+          providerId
         )
   }
 

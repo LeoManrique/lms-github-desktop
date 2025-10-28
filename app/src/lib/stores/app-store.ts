@@ -219,6 +219,11 @@ import { WindowState } from '../window-state'
 import { TypedBaseStore } from './base-store'
 import { MergeTreeResult } from '../../models/merge'
 import { promiseWithMinimumTimeout } from '../promise'
+import {
+  ClaudeProvider,
+  OllamaProvider,
+  getProviderManager,
+} from '../alternative-commit-providers'
 import { BackgroundFetcher } from './helpers/background-fetcher'
 import { RepositoryStateCache } from './repository-state-cache'
 import { readEmoji } from '../read-emoji'
@@ -710,6 +715,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
 
     onShowInstallingUpdate(this.onShowInstallingUpdate)
+
+    // Initialize alternative commit message providers (Claude, Ollama)
+    this.initializeAlternativeProviders()
+  }
+
+  /**
+   * Initialize and register alternative commit message providers.
+   * Note: This does NOT include Copilot - Copilot remains separate as upstream code.
+   */
+  private initializeAlternativeProviders(): void {
+    const providerManager = getProviderManager()
+
+    // Register Claude provider
+    providerManager.register(new ClaudeProvider())
+
+    // Register Ollama provider
+    providerManager.register(new OllamaProvider())
   }
 
   private initializeWindowState = async () => {
@@ -5464,7 +5486,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   public async _promptOverrideWithGeneratedCommitMessage(
     repository: Repository,
-    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    provider?: 'copilot' | 'claude' | 'ollama'
   ): Promise<void> {
     if (!this.confirmCommitMessageOverride) {
       // If user has disabled the confirmation, directly generate commit message
@@ -5476,6 +5499,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       type: PopupType.GenerateCommitMessageOverrideWarning,
       repository,
       filesSelected,
+      provider,
     })
   }
 
@@ -5558,6 +5582,60 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
 
       return true
+    })
+  }
+
+  /**
+   * Generate commit message using an alternative provider (Claude or Ollama).
+   * This is the unified method for all alternative providers.
+   *
+   * Note: This does NOT handle Copilot - Copilot has its own separate method
+   * (_generateCommitMessage) to avoid touching upstream code.
+   */
+  public async _generateCommitMessageWithAlternativeProvider(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    providerId: 'claude' | 'ollama'
+  ): Promise<boolean> {
+    return this.withIsGeneratingCommitMessage(repository, async () => {
+      const commitToAmend =
+        this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
+        undefined
+      const diff = await getFilesDiffText(
+        repository,
+        filesSelected,
+        commitToAmend ? `${commitToAmend}^` : undefined
+      )
+      if (!diff) {
+        return false
+      }
+
+      try {
+        const providerManager = getProviderManager()
+        const provider = providerManager.getProvider(providerId)
+
+        if (!provider) {
+          throw new Error(`Provider "${providerId}" not found`)
+        }
+
+        const response = await provider.generateCommitMessage(diff)
+
+        this._setCommitMessage(repository, {
+          summary: response.title,
+          description: response.description,
+          timestamp: Date.now(),
+          generatedByAlternativeProvider: providerId,
+        })
+
+        return true
+      } catch (e) {
+        this.emitError(
+          new ErrorWithMetadata(e, {
+            repository,
+          })
+        )
+        return false
+      }
     })
   }
 

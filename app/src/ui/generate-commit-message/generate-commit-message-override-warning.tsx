@@ -15,6 +15,7 @@ interface IGenerateCommitMessageOverrideWarningProps {
   readonly dispatcher: Dispatcher
   readonly repository: Repository
   readonly filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+  readonly provider?: 'copilot' | 'claude' | 'ollama'
 
   /**
    * Callback to use when the dialog gets closed.
@@ -81,14 +82,15 @@ export class GenerateCommitMessageOverrideWarning extends React.Component<
   }
 
   private onOverride = async () => {
-    if (!this.state.confirmCommitMessageOverride) {
-      await this.props.dispatcher.setConfirmCommitMessageOverrideSetting(false)
+    const { provider, dispatcher, repository, filesSelected } = this.props
+
+    if (provider === 'claude' || provider === 'ollama') {
+      dispatcher.generateCommitMessageWithAlternativeProvider(repository, filesSelected, provider)
+    } else {
+      // Default to Copilot (for backwards compatibility)
+      dispatcher.generateCommitMessage(repository, filesSelected)
     }
 
-    this.props.dispatcher.generateCommitMessage(
-      this.props.repository,
-      this.props.filesSelected
-    )
     this.props.onDismissed()
   }
 }

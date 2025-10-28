@@ -456,6 +456,7 @@ export type PopupDetail =
       type: PopupType.GenerateCommitMessageOverrideWarning
       repository: Repository
       filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+      provider?: 'copilot' | 'claude' | 'ollama'
     }
   | {
       type: PopupType.GenerateCommitMessageDisclaimer
