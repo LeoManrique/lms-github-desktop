@@ -968,6 +968,7 @@ export class FilterChangesList extends React.Component<
         }
         onPersistCommitMessage={this.onPersistCommitMessage}
         onGenerateCommitMessage={this.onGenerateCommitMessage}
+        onGenerateCommitMessageWithClaude={this.onGenerateCommitMessageWithClaude}
         onCommitMessageFocusSet={this.onCommitMessageFocusSet}
         onRefreshAuthor={this.onRefreshAuthor}
         onShowPopup={this.onShowPopup}
@@ -1026,6 +1027,22 @@ export class FilterChangesList extends React.Component<
           filesSelected
         )
       : this.props.dispatcher.generateCommitMessage(
+          this.props.repository,
+          filesSelected
+        )
+  }
+
+  private onGenerateCommitMessageWithClaude = (
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    mustOverrideExistingMessage: boolean
+  ) => {
+    return mustOverrideExistingMessage
+      ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
+          this.props.repository,
+          filesSelected,
+          'claude'
+        )
+      : this.props.dispatcher.generateCommitMessageWithClaude(
           this.props.repository,
           filesSelected
         )
