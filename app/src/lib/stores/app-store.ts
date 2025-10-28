@@ -5459,7 +5459,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   public async _promptOverrideWithGeneratedCommitMessage(
     repository: Repository,
-    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    provider?: 'copilot' | 'claude'
   ): Promise<void> {
     if (!this.confirmCommitMessageOverride) {
       // If user has disabled the confirmation, directly generate commit message
@@ -5471,6 +5472,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       type: PopupType.GenerateCommitMessageOverrideWarning,
       repository,
       filesSelected,
+      provider,
     })
   }
 
@@ -5553,6 +5555,45 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
 
       return true
+    })
+  }
+
+  public async _generateCommitMessageWithClaude(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+  ): Promise<boolean> {
+    return this.withIsGeneratingCommitMessage(repository, async () => {
+      const commitToAmend =
+        this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
+        undefined
+      const diff = await getFilesDiffText(
+        repository,
+        filesSelected,
+        commitToAmend ? `${commitToAmend}^` : undefined
+      )
+      if (!diff) {
+        return false
+      }
+
+      try {
+        const { invokeClaude } = await import('../claude-cli')
+        const response = await invokeClaude(diff)
+
+        this._setCommitMessage(repository, {
+          summary: response.title,
+          description: response.description,
+          timestamp: Date.now(),
+        })
+
+        return true
+      } catch (e) {
+        this.emitError(
+          new ErrorWithMetadata(e, {
+            repository,
+          })
+        )
+        return false
+      }
     })
   }
 

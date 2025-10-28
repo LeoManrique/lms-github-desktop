@@ -18,6 +18,7 @@ import { AuthorInput } from '../lib/author-input/author-input'
 import { FocusContainer } from '../lib/focus-container'
 import { Octicon, OcticonSymbolVariant } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
+import { claude } from '../octicons/claude'
 import { Author, UnknownAuthor, isKnownAuthor } from '../../models/author'
 import { IMenuItem } from '../../lib/menu-item'
 import { Commit, ICommitContext } from '../../models/commit'
@@ -165,6 +166,11 @@ interface ICommitMessageProps {
   readonly onPersistCommitMessage?: (message: ICommitMessage) => void
 
   readonly onGenerateCommitMessage?: (
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    mustOverrideExistingMessage: boolean
+  ) => void
+
+  readonly onGenerateCommitMessageWithClaude?: (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
     mustOverrideExistingMessage: boolean
   ) => void
@@ -929,6 +935,18 @@ export class CommitMessage extends React.Component<
     )
   }
 
+  private onClaudeButtonClick = async (
+    e: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e.preventDefault()
+    const { commitMessage } = this.state
+
+    this.props.onGenerateCommitMessageWithClaude?.(
+      this.props.filesSelected,
+      !!commitMessage.summary || !!commitMessage.description
+    )
+  }
+
   private onCoAuthorToggleButtonClick = async (
     e: React.MouseEvent<HTMLButtonElement>
   ) => {
@@ -983,6 +1001,49 @@ export class CommitMessage extends React.Component<
           {shouldShowGenerateCommitMessageCallOut && (
             <span className="call-to-action-bubble">New</span>
           )}
+        </Button>
+      </>
+    )
+  }
+
+  private renderClaudeButton() {
+    const {
+      onGenerateCommitMessageWithClaude,
+      filesSelected,
+      isCommitting,
+      isGeneratingCommitMessage,
+      commitToAmend,
+    } = this.props
+
+    if (onGenerateCommitMessageWithClaude === undefined) {
+      return null
+    }
+
+    const noFilesSelected = filesSelected.length === 0
+    const noChangesAvailable = !commitToAmend && noFilesSelected
+
+    const ariaLabel = isGeneratingCommitMessage
+      ? 'Generating commit details…'
+      : 'Generate commit message with Claude Code' +
+        (noChangesAvailable
+          ? '. Files must be selected to generate a commit message.'
+          : '')
+
+    return (
+      <>
+        <div className="separator" />
+        <Button
+          className="claude-button"
+          onClick={this.onClaudeButtonClick}
+          ariaLabel={ariaLabel}
+          tooltip={ariaLabel}
+          disabled={
+            isCommitting === true ||
+            isGeneratingCommitMessage ||
+            noChangesAvailable
+          }
+        >
+          <Octicon symbol={claude} />
         </Button>
       </>
     )
@@ -1080,7 +1141,16 @@ export class CommitMessage extends React.Component<
    * Whether or not there's anything to render in the action bar
    */
   private get isActionBarEnabled() {
-    return this.isCoAuthorInputEnabled || this.isCopilotButtonEnabled
+    // Show action bar if:
+    // 1. Co-author input is enabled (GitHub repos)
+    // 2. OR Copilot button should show
+    // 3. OR Claude button should show
+    const hasCopilot =
+      this.props.accounts.some(enableCommitMessageGeneration) &&
+      this.props.onGenerateCommitMessage !== undefined
+    const hasClaude = this.props.onGenerateCommitMessageWithClaude !== undefined
+
+    return this.isCoAuthorInputEnabled || hasCopilot || hasClaude
   }
 
   private renderActionBar() {
@@ -1098,6 +1168,7 @@ export class CommitMessage extends React.Component<
       <div className={className}>
         {this.renderCoAuthorToggleButton()}
         {this.renderCopilotButton()}
+        {this.renderClaudeButton()}
       </div>
     )
   }
