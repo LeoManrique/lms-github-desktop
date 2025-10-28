@@ -1077,11 +1077,13 @@ export class Dispatcher {
 
   public promptOverrideWithGeneratedCommitMessage(
     repository: Repository,
-    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
+    provider?: 'copilot' | 'claude'
   ) {
     return this.appStore._promptOverrideWithGeneratedCommitMessage(
       repository,
-      filesSelected
+      filesSelected,
+      provider
     )
   }
 
@@ -1094,6 +1096,13 @@ export class Dispatcher {
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
   ) {
     return this.appStore._generateCommitMessage(repository, filesSelected)
+  }
+
+  public generateCommitMessageWithClaude(
+    repository: Repository,
+    filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+  ) {
+    return this.appStore._generateCommitMessageWithClaude(repository, filesSelected)
   }
 
   /** Remove the given account from the app. */
