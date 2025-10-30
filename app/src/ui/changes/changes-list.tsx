@@ -866,7 +866,9 @@ export class ChangesList extends React.Component<
         }
         onPersistCommitMessage={this.onPersistCommitMessage}
         onGenerateCommitMessage={this.onGenerateCommitMessage}
-        onGenerateCommitMessageWithClaude={this.onGenerateCommitMessageWithClaude}
+        onGenerateCommitMessageWithAlternativeProvider={
+          this.onGenerateCommitMessageWithAlternativeProvider
+        }
         onCommitMessageFocusSet={this.onCommitMessageFocusSet}
         onRefreshAuthor={this.onRefreshAuthor}
         onShowPopup={this.onShowPopup}
@@ -922,19 +924,24 @@ export class ChangesList extends React.Component<
         )
   }
 
-  private onGenerateCommitMessageWithClaude = (
+  /**
+   * Unified handler for alternative provider commit message generation.
+   */
+  private onGenerateCommitMessageWithAlternativeProvider = (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean
+    mustOverrideExistingMessage: boolean,
+    providerId: 'claude' | 'ollama'
   ) => {
     return mustOverrideExistingMessage
       ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
           this.props.repository,
           filesSelected,
-          'claude'
+          providerId
         )
-      : this.props.dispatcher.generateCommitMessageWithClaude(
+      : this.props.dispatcher.generateCommitMessageWithAlternativeProvider(
           this.props.repository,
-          filesSelected
+          filesSelected,
+          providerId
         )
   }
 

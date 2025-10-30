@@ -19,6 +19,7 @@ import { FocusContainer } from '../lib/focus-container'
 import { Octicon, OcticonSymbolVariant } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { claude } from '../octicons/claude'
+import { ollama } from '../octicons/ollama'
 import { Author, UnknownAuthor, isKnownAuthor } from '../../models/author'
 import { IMenuItem } from '../../lib/menu-item'
 import { Commit, ICommitContext } from '../../models/commit'
@@ -170,9 +171,14 @@ interface ICommitMessageProps {
     mustOverrideExistingMessage: boolean
   ) => void
 
-  readonly onGenerateCommitMessageWithClaude?: (
+  /**
+   * Called when the user wants to generate a commit message with an alternative provider.
+   * This is the unified handler for Claude, Ollama, and future alternative providers.
+   */
+  readonly onGenerateCommitMessageWithAlternativeProvider?: (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean
+    mustOverrideExistingMessage: boolean,
+    providerId: 'claude' | 'ollama'
   ) => void
 
   /**
@@ -935,16 +941,20 @@ export class CommitMessage extends React.Component<
     )
   }
 
-  private onClaudeButtonClick = async (
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    e.preventDefault()
-    const { commitMessage } = this.state
+  /**
+   * Unified click handler for alternative provider buttons (Claude, Ollama).
+   */
+  private onAlternativeProviderButtonClick = (providerId: 'claude' | 'ollama') => {
+    return async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault()
+      const { commitMessage } = this.state
 
-    this.props.onGenerateCommitMessageWithClaude?.(
-      this.props.filesSelected,
-      !!commitMessage.summary || !!commitMessage.description
-    )
+      this.props.onGenerateCommitMessageWithAlternativeProvider?.(
+        this.props.filesSelected,
+        !!commitMessage.summary || !!commitMessage.description,
+        providerId
+      )
+    }
   }
 
   private onCoAuthorToggleButtonClick = async (
@@ -1006,16 +1016,24 @@ export class CommitMessage extends React.Component<
     )
   }
 
-  private renderClaudeButton() {
+  /**
+   * Unified renderer for alternative provider buttons (Claude, Ollama, etc.).
+   * This does NOT include Copilot - Copilot has its own separate renderer.
+   */
+  private renderAlternativeProviderButton(
+    providerId: 'claude' | 'ollama',
+    displayName: string,
+    icon: OcticonSymbolVariant
+  ) {
     const {
-      onGenerateCommitMessageWithClaude,
+      onGenerateCommitMessageWithAlternativeProvider,
       filesSelected,
       isCommitting,
       isGeneratingCommitMessage,
       commitToAmend,
     } = this.props
 
-    if (onGenerateCommitMessageWithClaude === undefined) {
+    if (onGenerateCommitMessageWithAlternativeProvider === undefined) {
       return null
     }
 
@@ -1024,7 +1042,7 @@ export class CommitMessage extends React.Component<
 
     const ariaLabel = isGeneratingCommitMessage
       ? 'Generating commit details…'
-      : 'Generate commit message with Claude Code' +
+      : `Generate commit message with ${displayName}` +
         (noChangesAvailable
           ? '. Files must be selected to generate a commit message.'
           : '')
@@ -1033,8 +1051,8 @@ export class CommitMessage extends React.Component<
       <>
         <div className="separator" />
         <Button
-          className="claude-button"
-          onClick={this.onClaudeButtonClick}
+          className={`${providerId}-button`}
+          onClick={this.onAlternativeProviderButtonClick(providerId)}
           ariaLabel={ariaLabel}
           tooltip={ariaLabel}
           disabled={
@@ -1043,10 +1061,18 @@ export class CommitMessage extends React.Component<
             noChangesAvailable
           }
         >
-          <Octicon symbol={claude} />
+          <Octicon symbol={icon} />
         </Button>
       </>
     )
+  }
+
+  private renderClaudeButton() {
+    return this.renderAlternativeProviderButton('claude', 'Claude Code', claude)
+  }
+
+  private renderOllamaButton() {
+    return this.renderAlternativeProviderButton('ollama', 'Ollama', ollama)
   }
 
   private renderCoAuthorToggleButton() {
@@ -1144,13 +1170,14 @@ export class CommitMessage extends React.Component<
     // Show action bar if:
     // 1. Co-author input is enabled (GitHub repos)
     // 2. OR Copilot button should show
-    // 3. OR Claude button should show
+    // 3. OR Alternative providers are available (Claude, Ollama)
     const hasCopilot =
       this.props.accounts.some(enableCommitMessageGeneration) &&
       this.props.onGenerateCommitMessage !== undefined
-    const hasClaude = this.props.onGenerateCommitMessageWithClaude !== undefined
+    const hasAlternativeProviders =
+      this.props.onGenerateCommitMessageWithAlternativeProvider !== undefined
 
-    return this.isCoAuthorInputEnabled || hasCopilot || hasClaude
+    return this.isCoAuthorInputEnabled || hasCopilot || hasAlternativeProviders
   }
 
   private renderActionBar() {
@@ -1169,6 +1196,7 @@ export class CommitMessage extends React.Component<
         {this.renderCoAuthorToggleButton()}
         {this.renderCopilotButton()}
         {this.renderClaudeButton()}
+        {this.renderOllamaButton()}
       </div>
     )
   }

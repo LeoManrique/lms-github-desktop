@@ -15,7 +15,7 @@ interface IGenerateCommitMessageOverrideWarningProps {
   readonly dispatcher: Dispatcher
   readonly repository: Repository
   readonly filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
-  readonly provider?: 'copilot' | 'claude'
+  readonly provider?: 'copilot' | 'claude' | 'ollama'
 
   /**
    * Callback to use when the dialog gets closed.
@@ -84,8 +84,8 @@ export class GenerateCommitMessageOverrideWarning extends React.Component<
   private onOverride = async () => {
     const { provider, dispatcher, repository, filesSelected } = this.props
 
-    if (provider === 'claude') {
-      dispatcher.generateCommitMessageWithClaude(repository, filesSelected)
+    if (provider === 'claude' || provider === 'ollama') {
+      dispatcher.generateCommitMessageWithAlternativeProvider(repository, filesSelected, provider)
     } else {
       // Default to Copilot (for backwards compatibility)
       dispatcher.generateCommitMessage(repository, filesSelected)
