@@ -55,12 +55,6 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
     }
 
     try {
-      // Create abort controller for manual timeout
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => {
-        controller.abort()
-      }, this.TIMEOUT_MS)
-
       const response = await fetch(`${this.OLLAMA_URL}/api/generate`, {
         method: 'POST',
         headers: {
@@ -72,10 +66,8 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
           stream: false,
           format: 'json',
         }),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(this.TIMEOUT_MS),
       })
-
-      clearTimeout(timeoutId)
 
       if (!response.ok) {
         if (response.status === 404) {
