@@ -125,6 +125,18 @@
     }
   }
 
+  .ollama-button {
+    color: var(--text-secondary-color);
+
+    &:hover {
+      color: var(--text-color);
+    }
+
+    &:focus {
+      outline-offset: 2px;
+    }
+  }
+
   .call-to-action-bubble {
     font-weight: var(--font-weight-semibold);
     display: inline-block;
@@ -250,7 +262,8 @@
 
     .co-authors-toggle,
     .copilot-button,
-    .claude-button {
+    .claude-button,
+    .ollama-button {
       // button reset styles
       border: none;
       border-radius: 0px;
