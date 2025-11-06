@@ -70,6 +70,21 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
       })
 
       if (!response.ok) {
+        // Try to extract error details from response body
+        let errorMessage = `Ollama server returned error: ${response.status}`
+        try {
+          const errorData = await response.json()
+          if (errorData.error) {
+            errorMessage = `Ollama error: ${errorData.error}`
+          }
+        } catch {
+          // If we can't parse the error body, use the status text
+          if (response.statusText) {
+            errorMessage = `Ollama error (${response.status}): ${response.statusText}`
+          }
+        }
+
+        // Handle specific error cases
         if (response.status === 404) {
           throw new ProviderError(
             `Model "${this.MODEL_NAME}" not found. ` +
@@ -78,15 +93,45 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
             false
           )
         }
+
         throw new ProviderError(
-          `Ollama server returned error: ${response.status}`,
+          errorMessage,
           'API_ERROR',
           response.status >= 500 // Retry on 5xx errors
         )
       }
 
-      const data = await response.json()
-      const parsed = JSON.parse(data.response)
+      let data: any
+      try {
+        data = await response.json()
+      } catch (jsonError) {
+        throw new ProviderError(
+          'Ollama returned an invalid JSON response. The server may be experiencing issues.',
+          'INVALID_RESPONSE',
+          true
+        )
+      }
+
+      // Check if response field exists
+      if (!data.response) {
+        throw new ProviderError(
+          `Ollama response missing 'response' field. Got: ${JSON.stringify(data).substring(0, 200)}`,
+          'INVALID_RESPONSE',
+          true
+        )
+      }
+
+      // Parse the response string as JSON
+      let parsed: any
+      try {
+        parsed = JSON.parse(data.response)
+      } catch (parseError) {
+        throw new ProviderError(
+          `Failed to parse Ollama response as JSON. Response was: ${data.response?.substring(0, 200)}`,
+          'INVALID_RESPONSE',
+          true
+        )
+      }
 
       // The tavernari/git-commit-message model returns {message, body, trailers}
       // We need to map it to {title, description} for our interface
