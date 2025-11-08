@@ -72,6 +72,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
   readonly icon = claude
 
   private readonly MAX_DIFF_SIZE = 20 * 1024 * 1024 // 20MB
+  private readonly TIMEOUT_MS = 120000 // 2 minutes
 
   /**
    * Check if Claude CLI is available.
@@ -147,7 +148,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       const startTime = Date.now()
       const result = await spawn(command, args, {
         stdin: prompt,
-        timeout: 120000, // 2 minutes - Claude can take a while to respond
+        timeout: this.TIMEOUT_MS,
       })
       const duration = Date.now() - startTime
 
@@ -225,7 +226,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
 
         if (e.message === 'Process timeout') {
           throw new ProviderError(
-            'Claude CLI took too long to respond (>2 minutes)',
+            `Claude CLI took too long to respond (>${this.TIMEOUT_MS / 1000}s)`,
             'TIMEOUT',
             true
           )
@@ -233,7 +234,9 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       }
 
       throw new ProviderError(
-        `Failed to generate commit message: ${e instanceof Error ? e.message : String(e)}`,
+        `Failed to generate commit message: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
         'UNKNOWN',
         true
       )

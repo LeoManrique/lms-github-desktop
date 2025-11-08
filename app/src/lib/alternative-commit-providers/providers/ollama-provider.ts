@@ -14,7 +14,7 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
   private readonly OLLAMA_URL = 'http://localhost:11434'
   private readonly MODEL_NAME = 'tavernari/git-commit-message:latest'
   private readonly MAX_DIFF_SIZE = 50 * 1024 * 1024 // 50MB (local = no limit!)
-  private readonly TIMEOUT_MS = 60000 // 1 minute
+  private readonly TIMEOUT_MS = 120000 // 2 minutes
 
   /**
    * Check if Ollama is running and has the commit message model.
@@ -30,9 +30,7 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
       }
 
       const data = await response.json()
-      return data.models.some((m: any) =>
-        m.name.includes('git-commit-message')
-      )
+      return data.models.some((m: any) => m.name.includes('git-commit-message'))
     } catch (e) {
       return false
     }
@@ -115,7 +113,9 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
       // Check if response field exists
       if (!data.response) {
         throw new ProviderError(
-          `Ollama response missing 'response' field. Got: ${JSON.stringify(data).substring(0, 200)}`,
+          `Ollama response missing 'response' field. Got: ${JSON.stringify(
+            data
+          ).substring(0, 200)}`,
           'INVALID_RESPONSE',
           true
         )
@@ -127,7 +127,10 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
         parsed = JSON.parse(data.response)
       } catch (parseError) {
         throw new ProviderError(
-          `Failed to parse Ollama response as JSON. Response was: ${data.response?.substring(0, 200)}`,
+          `Failed to parse Ollama response as JSON. Response was: ${data.response?.substring(
+            0,
+            200
+          )}`,
           'INVALID_RESPONSE',
           true
         )
@@ -137,7 +140,7 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
       // We need to map it to {title, description} for our interface
       const mapped: IProviderCommitMessage = {
         title: parsed.message || parsed.title,
-        description: parsed.body || parsed.description || ''
+        description: parsed.body || parsed.description || '',
       }
 
       return this.validateResponse(mapped)
@@ -157,14 +160,16 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
 
       if (e.name === 'AbortError' || e.name === 'TimeoutError') {
         throw new ProviderError(
-          'Ollama took too long to respond (>60s)',
+          'Ollama took too long to respond (>120s)',
           'TIMEOUT',
           true
         )
       }
 
       throw new ProviderError(
-        `Failed to generate commit message: ${e instanceof Error ? e.message : String(e)}`,
+        `Failed to generate commit message: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
         'UNKNOWN',
         true
       )
