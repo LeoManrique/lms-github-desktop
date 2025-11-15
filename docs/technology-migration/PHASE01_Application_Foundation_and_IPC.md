@@ -86,50 +86,583 @@ Required channels (minimum):
 - Main process handlers: `app/src/main-process/ipc-main.ts`
 - Renderer process client: `app/src/lib/ipc-renderer.ts`
 
+#### IPC Implementation Workflow (Request-Response Pattern)
+
+**Detailed Implementation Steps:**
+
+**Step 1: Define Channel Contract in Shared Types**
+```typescript
+// app/src/lib/ipc-shared.ts
+export interface IRequestResponseChannels {
+  'get-path': (pathType: 'home' | 'appData' | 'temp') => Promise<string>
+}
+```
+
+**Step 2: Implement Backend Handler**
+```typescript
+// app/src/main-process/ipc-main.ts
+import { ipcMain, app } from 'electron'  // or equivalent
+
+// Register handler
+ipcMain.handle('get-path', async (event, pathType: string): Promise<string> => {
+  // Security: Validate sender
+  if (!isTrustedIPCSender(event.senderFrame)) {
+    throw new Error('Untrusted IPC sender')
+  }
+
+  // Validate input
+  const validPaths = ['home', 'appData', 'temp', 'desktop', 'documents']
+  if (!validPaths.includes(pathType)) {
+    throw new Error(`Invalid path type: ${pathType}`)
+  }
+
+  // Execute operation
+  try {
+    const path = app.getPath(pathType as any)
+    return path
+  } catch (error) {
+    console.error(`Failed to get path ${pathType}:`, error)
+    throw error
+  }
+})
+```
+
+**Step 3: Implement Frontend Client**
+```typescript
+// app/src/lib/ipc-renderer.ts
+import { ipcRenderer } from 'electron'  // or equivalent
+
+export async function getPath(pathType: string): Promise<string> {
+  try {
+    const result = await ipcRenderer.invoke('get-path', pathType)
+    return result
+  } catch (error) {
+    console.error('IPC get-path failed:', error)
+    throw new Error(`Failed to get ${pathType} path: ${error.message}`)
+  }
+}
+```
+
+**Step 4: Usage in Frontend**
+```typescript
+// app/src/ui/components/settings.tsx
+const homePath = await getPath('home')
+const tempPath = await getPath('temp')
+```
+
+#### IPC Error Handling Strategy
+
+**Error Categories:**
+1. **Network/Transport Errors** - IPC channel disconnected
+2. **Validation Errors** - Invalid parameters
+3. **Security Errors** - Untrusted sender
+4. **Operation Errors** - Backend operation failed
+
+**Error Handling Pattern:**
+```typescript
+// Wrap all IPC calls with try-catch
+async function safeIPCCall<T>(
+  operation: () => Promise<T>,
+  fallback?: T
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error.message.includes('IPC channel')) {
+      // Transport error - critical
+      showFatalError('Application communication error')
+      throw error
+    } else if (error.message.includes('Validation')) {
+      // Validation error - log and use fallback
+      console.warn('IPC validation error:', error)
+      return fallback!
+    } else {
+      // Unknown error - rethrow
+      throw error
+    }
+  }
+}
+
+// Usage
+const path = await safeIPCCall(
+  () => getPath('home'),
+  '/home/default'  // fallback
+)
+```
+
 ### 3. Application Lifecycle Management
 
 #### Startup Sequence
 
 **Reference:** `app/src/main-process/main.ts:55-100`
 
-1. **Initialize Logging System**
-   - Set application log path
-   - Enable source maps for error stack traces
-   - Configure Winston logger (or equivalent)
-   - Reference: `app/src/main-process/main.ts:1` (imports logging/main/install)
+**Complete Startup Workflow with Timing:**
 
-2. **Launch Time Tracking**
-   - Record application launch time
-   - Track time until renderer is ready
-   - Calculate and report launch stats
-   - Reference: `app/src/main-process/main.ts:60` (`const launchTime = now()`)
+```
+T+0ms:    Backend Process Starts
+T+10ms:   ├── Initialize Logging System
+T+20ms:   ├── Install Source Map Support
+T+30ms:   ├── Register Global Error Handlers
+T+50ms:   ├── Initialize Application (app.whenReady())
+T+100ms:  ├── Create Main Window
+T+150ms:  ├── Load Frontend HTML
+T+200ms:  ├── Frontend Process Starts
+T+300ms:  ├── Frontend: Initialize Stores
+T+500ms:  ├── Frontend: Mount React
+T+600ms:  ├── Frontend: Send 'renderer-ready' IPC
+T+610ms:  └── Application Ready ✓
+```
 
-3. **Register Error Handlers**
-   - Uncaught exception handler
-   - Unhandled promise rejection handler
-   - Crash reporting mechanism
-   - Reference: `app/src/main-process/main.ts:69-86` (handleUncaughtException)
-   - Frontend reference: `app/src/ui/index.tsx:191-217` (onUncaughtException)
+**Step 1: Initialize Logging System**
 
-4. **Create Main Window**
-   - Initialize window with saved state (position, size)
-   - Apply window constraints (min/max size)
-   - Set up window event handlers
+```typescript
+// app/src/main-process/main.ts:1-10
+import { initializeLogging } from './logging'
 
-5. **Load Frontend**
-   - Load HTML entry point
-   - Wait for 'renderer-ready' IPC message
-   - Track ready time for performance metrics
+// Set log file path
+const logPath = path.join(
+  app.getPath('userData'),
+  'logs',
+  `desktop-${Date.now()}.log`
+)
+
+// Initialize Winston logger
+initializeLogging(logPath, {
+  level: __DEV__ ? 'debug' : 'info',
+  enableConsole: __DEV__,
+  enableFile: true,
+  maxFiles: 7,  // Keep 1 week of logs
+  maxSize: 10 * 1024 * 1024  // 10MB per file
+})
+
+// Enable source map support for better stack traces
+require('source-map-support').install()
+
+console.log(`[T+${performance.now()}ms] Logging initialized`)
+```
+
+**Reference:** `app/src/main-process/main.ts:1` (imports logging/main/install)
+
+**Step 2: Launch Time Tracking**
+
+```typescript
+// app/src/main-process/main.ts:60
+const launchTime = performance.now()
+let rendererReadyTime: number | null = null
+
+// Listen for renderer ready signal
+ipcMain.on('renderer-ready', (event, renderTime: number) => {
+  rendererReadyTime = performance.now()
+  const totalLaunchTime = rendererReadyTime - launchTime
+  const frontendBootTime = renderTime
+
+  console.log(`[PERF] Application launch metrics:`)
+  console.log(`  - Backend init: ${rendererReadyTime - launchTime - frontendBootTime}ms`)
+  console.log(`  - Frontend init: ${frontendBootTime}ms`)
+  console.log(`  - Total: ${totalLaunchTime}ms`)
+
+  // Send to analytics if enabled
+  if (statsEnabled) {
+    recordTiming('app.launch', totalLaunchTime)
+  }
+})
+```
+
+**Reference:** `app/src/main-process/main.ts:60` (`const launchTime = now()`)
+
+**Step 3: Register Global Error Handlers**
+
+```typescript
+// app/src/main-process/main.ts:69-86
+let preventQuit = false  // Used to prevent quit during critical operations
+
+function handleUncaughtException(error: Error) {
+  console.error('Uncaught exception in main process:', error)
+
+  // Write crash log
+  const crashLog = {
+    timestamp: new Date().toISOString(),
+    error: error.stack || error.message,
+    platform: process.platform,
+    arch: process.arch,
+    version: app.getVersion()
+  }
+
+  const crashPath = path.join(app.getPath('userData'), 'crashes', `crash-${Date.now()}.log`)
+  fs.writeFileSync(crashPath, JSON.stringify(crashLog, null, 2))
+
+  // Show error dialog
+  dialog.showMessageBoxSync({
+    type: 'error',
+    title: 'Application Error',
+    message: 'GitHub Desktop encountered a fatal error',
+    detail: error.message,
+    buttons: ['Quit', 'Copy Error', 'Send Report']
+  })
+
+  // Allow quit
+  preventQuit = false
+  app.quit()
+}
+
+// Register handlers
+process.on('uncaughtException', handleUncaughtException)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason)
+  handleUncaughtException(new Error(`Unhandled rejection: ${reason}`))
+})
+
+console.log(`[T+${performance.now()}ms] Error handlers registered`)
+```
+
+**Reference:** `app/src/main-process/main.ts:69-86` (handleUncaughtException)
+
+**Step 4: Create Main Window**
+
+```typescript
+// app/src/main-process/main.ts:90-150
+import { AppWindow } from './app-window'
+
+// Wait for app ready
+app.whenReady().then(async () => {
+  console.log(`[T+${performance.now()}ms] App ready, creating window`)
+
+  // Load saved window state
+  const savedState = await loadWindowState()
+  const windowState = savedState || {
+    x: undefined,  // Center on screen
+    y: undefined,
+    width: 1000,
+    height: 700,
+    maximized: false,
+    fullscreen: false
+  }
+
+  // Create window
+  const mainWindow = new AppWindow(windowState)
+
+  // Set up window event handlers
+  mainWindow.onClose(() => {
+    // Save window state before close
+    saveWindowState(mainWindow.getBounds())
+  })
+
+  mainWindow.onShow(() => {
+    console.log(`[T+${performance.now()}ms] Window visible`)
+  })
+
+  // Load frontend HTML
+  const htmlPath = __DEV__
+    ? 'http://localhost:3000/index.html'
+    : `file://${__dirname}/renderer/index.html`
+
+  await mainWindow.load(htmlPath)
+  console.log(`[T+${performance.now()}ms] Frontend loaded`)
+})
+```
+
+**Window State Persistence:**
+
+```typescript
+// app/src/main-process/window-state.ts
+interface WindowState {
+  x: number | undefined
+  y: number | undefined
+  width: number
+  height: number
+  maximized: boolean
+  fullscreen: boolean
+}
+
+async function loadWindowState(): Promise<WindowState | null> {
+  const statePath = path.join(app.getPath('userData'), 'window-state.json')
+
+  if (!fs.existsSync(statePath)) {
+    return null
+  }
+
+  try {
+    const data = await fs.promises.readFile(statePath, 'utf8')
+    const state = JSON.parse(data)
+
+    // Validate state is still valid (e.g., screen still exists)
+    if (!isWindowPositionValid(state)) {
+      console.warn('Saved window position is off-screen, ignoring')
+      return null
+    }
+
+    return state
+  } catch (error) {
+    console.error('Failed to load window state:', error)
+    return null
+  }
+}
+
+function isWindowPositionValid(state: WindowState): boolean {
+  const { screen } = require('electron')
+  const displays = screen.getAllDisplays()
+
+  // Check if window position intersects with any display
+  return displays.some(display => {
+    const { x, y, width, height } = display.bounds
+    const windowX = state.x || 0
+    const windowY = state.y || 0
+
+    return (
+      windowX >= x &&
+      windowX < x + width &&
+      windowY >= y &&
+      windowY < y + height
+    )
+  })
+}
+```
+
+**Step 5: Frontend Initialization**
+
+**Frontend Entry Point (`app/src/ui/index.tsx`):**
+
+```typescript
+// Record frontend start time
+const frontendStartTime = performance.now()
+
+// Step 1: Environment setup (development tools)
+if (__DEV__) {
+  // Install React DevTools, etc.
+  require('electron-react-devtools').install()
+}
+
+// Step 2: Shell environment patching (macOS fix for PATH)
+import { updateEnvironmentForProcess } from './lib/shell'
+if (needsShellEnvironmentPatching()) {
+  await updateEnvironmentForProcess()
+}
+
+// Step 3: Git environment setup
+process.env.LOCAL_GIT_DIRECTORY = path.join(process.resourcesPath, 'git')
+delete process.env.GIT_EXEC_PATH  // Prevent conflicts
+
+// Step 4: Error tracking setup
+setupErrorHandling()
+
+// Step 5: Initialize stores
+const accountsStore = new AccountsStore(localStorage, TokenStore)
+const repositoriesStore = new RepositoriesStore(new RepositoriesDatabase('GitHubDesktop'))
+// ... more stores
+
+// Step 6: Initialize dispatcher
+const dispatcher = new Dispatcher(appStore, repositoryStateManager, statsStore)
+
+// Step 7: Mount React app
+const container = document.getElementById('desktop-app-container')
+ReactDOM.render(
+  <App
+    dispatcher={dispatcher}
+    appStore={appStore}
+    startTime={frontendStartTime}
+  />,
+  container
+)
+
+// Step 8: Send ready signal to backend
+const totalBootTime = performance.now() - frontendStartTime
+ipcRenderer.send('renderer-ready', totalBootTime)
+console.log(`[Frontend] Ready in ${totalBootTime}ms`)
+```
+
+**Frontend Reference:** `app/src/ui/index.tsx:191-217` (onUncaughtException)
 
 #### Shutdown Sequence
 
-Must handle:
-- **Normal Quit**: User closes window or selects Quit
-- **Forced Quit**: System shutdown
-- **Prevented Quit**: Block quit during critical operations
-- **Cleanup**: Close databases, save state, terminate subprocesses
-
 **Reference:** `app/src/main-process/main.ts:62` (preventQuit flag)
+
+**Shutdown State Machine:**
+
+```
+User Triggers Quit
+       ↓
+   [before-quit event]
+       ↓
+   Check preventQuit flag
+       ├── true  → Cancel quit, show message
+       └── false → Continue
+           ↓
+       Check for uncommitted changes
+           ├── true  → Show confirmation dialog
+           │           ├── Cancel → Cancel quit
+           │           └── Confirm → Continue
+           └── false → Continue
+               ↓
+           [will-quit event]
+               ↓
+           Cleanup Operations:
+           ├── Save window state
+           ├── Close all databases
+           ├── Flush logs
+           ├── Terminate git processes
+           └── Clear temp files
+               ↓
+           [quit event]
+               ↓
+           Process exits
+```
+
+**Implementation:**
+
+```typescript
+// app/src/main-process/main.ts
+let preventQuit = false
+let isQuitting = false
+
+// Set this flag during critical operations
+export function setPreventQuit(prevent: boolean) {
+  preventQuit = prevent
+}
+
+// before-quit: First chance to prevent quit
+app.on('before-quit', (event) => {
+  if (preventQuit && !isQuitting) {
+    event.preventDefault()
+
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Operation in Progress',
+      message: 'Cannot quit while operation is in progress',
+      detail: 'Please wait for the current operation to complete',
+      buttons: ['OK']
+    })
+
+    return
+  }
+
+  // Check for uncommitted changes
+  if (hasUncommittedChanges() && !isQuitting) {
+    event.preventDefault()
+
+    const choice = dialog.showMessageBoxSync({
+      type: 'question',
+      title: 'Uncommitted Changes',
+      message: 'You have uncommitted changes',
+      detail: 'Are you sure you want to quit?',
+      buttons: ['Cancel', 'Quit Anyway'],
+      defaultId: 0,
+      cancelId: 0
+    })
+
+    if (choice === 1) {  // Quit Anyway
+      isQuitting = true
+      app.quit()
+    }
+
+    return
+  }
+})
+
+// will-quit: Perform cleanup
+app.on('will-quit', async (event) => {
+  event.preventDefault()  // Prevent immediate quit
+
+  console.log('Application shutting down, performing cleanup...')
+
+  try {
+    // 1. Save window state
+    if (mainWindow) {
+      const bounds = mainWindow.getBounds()
+      await saveWindowState(bounds)
+      console.log('✓ Window state saved')
+    }
+
+    // 2. Close all databases
+    await closeAllDatabases()
+    console.log('✓ Databases closed')
+
+    // 3. Flush logs
+    await logger.flush()
+    console.log('✓ Logs flushed')
+
+    // 4. Kill all git processes
+    await killAllGitProcesses()
+    console.log('✓ Git processes terminated')
+
+    // 5. Clear temp files
+    await clearTempFiles()
+    console.log('✓ Temp files cleared')
+
+    console.log('Cleanup complete, exiting')
+  } catch (error) {
+    console.error('Error during cleanup:', error)
+    // Continue with quit even if cleanup fails
+  } finally {
+    // Now actually quit
+    app.exit(0)
+  }
+})
+
+// window-all-closed: Platform-specific behavior
+app.on('window-all-closed', () => {
+  // On macOS, apps typically stay open even with no windows
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+// Example of preventing quit during critical operation
+async function performCriticalOperation() {
+  setPreventQuit(true)
+
+  try {
+    await doSomethingCritical()
+  } finally {
+    setPreventQuit(false)
+  }
+}
+```
+
+**Cleanup Functions:**
+
+```typescript
+async function closeAllDatabases() {
+  // Close IndexedDB connections
+  const databases = [
+    repositoriesDatabase,
+    pullRequestDatabase,
+    issuesDatabase
+    // ... more databases
+  ]
+
+  await Promise.all(databases.map(db => db.close()))
+}
+
+async function killAllGitProcesses() {
+  // Track all spawned git processes
+  for (const gitProcess of activeGitProcesses) {
+    if (!gitProcess.killed) {
+      gitProcess.kill('SIGTERM')
+
+      // Wait up to 5 seconds for graceful shutdown
+      await Promise.race([
+        new Promise(resolve => gitProcess.on('exit', resolve)),
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ])
+
+      // Force kill if still running
+      if (!gitProcess.killed) {
+        gitProcess.kill('SIGKILL')
+      }
+    }
+  }
+
+  activeGitProcesses.clear()
+}
+
+async function clearTempFiles() {
+  const tempDir = path.join(app.getPath('temp'), 'github-desktop')
+
+  if (fs.existsSync(tempDir)) {
+    await fs.promises.rm(tempDir, { recursive: true, force: true })
+  }
+}
+```
 
 ### 4. Window Management
 
