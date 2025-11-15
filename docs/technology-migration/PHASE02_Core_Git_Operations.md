@@ -68,6 +68,220 @@ function git(
 - This implementation bundles git: `app/src/ui/index.tsx:93` sets `LOCAL_GIT_DIRECTORY`
 - Uses Dugite library (Node.js wrapper for git) - reference: `package.json` dugite@3.0.0
 
+#### Complete Git Command Execution Workflow
+
+**Step-by-Step Process:**
+
+```
+1. Prepare Command
+   ├── Build args array: ['status', '--porcelain=v2']
+   ├── Set environment variables
+   ├── Set working directory
+   └── Configure options (timeout, stdin, etc.)
+       ↓
+2. Spawn Git Process
+   ├── Locate git binary
+   ├── Create child process
+   ├── Set up stdio pipes (stdin, stdout, stderr)
+   └── Set process environment
+       ↓
+3. Monitor Execution
+   ├── Collect stdout data
+   ├── Collect stderr data
+   ├── Parse progress output (if applicable)
+   ├── Check timeout
+   └── Handle process signals
+       ↓
+4. Wait for Exit
+   ├── Process exits with code
+   ├── Finalize stdout/stderr
+   └── Determine success/failure
+       ↓
+5. Parse Output
+   ├── Check exit code against expectedCodes
+   ├── Parse stderr for known git errors
+   ├── Extract structured data from stdout
+   └── Return IGitResult
+       ↓
+6. Handle Result
+   ├── Success: Return data to caller
+   ├── Expected error: Return error code
+   └── Unexpected error: Throw exception
+```
+
+**Complete Implementation:**
+
+```typescript
+// app/src/lib/git/core.ts
+import { spawn, ChildProcess } from 'child_process'
+
+export async function git(
+  args: string[],
+  path: string,
+  name: string,
+  options: IGitExecutionOptions = {}
+): Promise<IGitResult> {
+  // Step 1: Prepare environment
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',  // Disable prompts
+    GIT_TRACE: '0',  // Disable trace output
+    ...options.env
+  }
+
+  // Remove sensitive env vars
+  delete env.GH_TOKEN
+  delete env.GITHUB_TOKEN
+
+  // Step 2: Build command
+  const gitPath = getGitPath()  // From bundled git or system
+  const fullArgs = [...args]
+
+  console.log(`[git] ${name}: git ${fullArgs.join(' ')}`)
+
+  // Step 3: Spawn process
+  const startTime = performance.now()
+
+  const process = spawn(gitPath, fullArgs, {
+    cwd: path,
+    env: env,
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+
+  // Allow caller to access process for termination
+  if (options.processCallback) {
+    options.processCallback(process)
+  }
+
+  // Step 4: Collect output
+  let stdout = ''
+  let stderr = ''
+
+  process.stdout.on('data', (data: Buffer) => {
+    const chunk = data.toString('utf8')
+    stdout += chunk
+
+    // Parse progress if requested
+    if (options.trackLFSProgress && progressCallback) {
+      const progress = parseGitProgress(chunk)
+      if (progress) {
+        progressCallback(progress)
+      }
+    }
+  })
+
+  process.stderr.on('data', (data: Buffer) => {
+    stderr += data.toString('utf8')
+  })
+
+  // Step 5: Handle stdin
+  if (options.stdin) {
+    process.stdin.write(options.stdin)
+    process.stdin.end()
+  }
+
+  // Step 6: Wait for completion with timeout
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    const timeout = options.timeout || 120000  // 2 min default
+
+    const timer = setTimeout(() => {
+      process.kill('SIGTERM')
+      reject(new Error(`Git operation '${name}' timed out after ${timeout}ms`))
+    }, timeout)
+
+    process.on('exit', (code) => {
+      clearTimeout(timer)
+      resolve(code || 0)
+    })
+
+    process.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+  })
+
+  const duration = performance.now() - startTime
+  console.log(`[git] ${name} completed in ${duration.toFixed(0)}ms with exit code ${exitCode}`)
+
+  // Step 7: Determine success
+  const successCodes = options.successExitCodes || new Set([0])
+  const success = successCodes.has(exitCode)
+
+  // Step 8: Parse git errors from stderr
+  const gitError = parseGitError(stderr, exitCode)
+  const gitErrorDescription = gitError ? getGitErrorDescription(gitError) : null
+
+  // Step 9: Check if error was expected
+  if (!success && gitError) {
+    const expectedErrors = options.expectedErrors || new Set()
+
+    if (!expectedErrors.has(gitError)) {
+      // Unexpected error - throw
+      throw new GitError(
+        `Git operation '${name}' failed: ${gitErrorDescription}`,
+        gitError,
+        exitCode,
+        stderr
+      )
+    }
+  }
+
+  // Step 10: Return result
+  return {
+    stdout,
+    stderr,
+    exitCode,
+    gitError,
+    gitErrorDescription,
+    path
+  }
+}
+
+// Error parsing
+function parseGitError(stderr: string, exitCode: number): GitError | null {
+  // Pattern matching on stderr
+  if (stderr.includes('fatal: not a git repository')) {
+    return GitError.NotAGitRepository
+  }
+
+  if (stderr.includes('error: failed to push')) {
+    if (stderr.includes('non-fast-forward')) {
+      return GitError.PushNotFastForward
+    }
+    if (stderr.includes('protected branch')) {
+      return GitError.ProtectedBranchForcePush
+    }
+  }
+
+  if (stderr.includes('CONFLICT')) {
+    return GitError.MergeConflicts
+  }
+
+  if (exitCode === 128) {
+    return GitError.BadRevision
+  }
+
+  return null
+}
+
+// Progress parsing
+function parseGitProgress(line: string): IProgress | null {
+  // Match patterns like: "Receiving objects: 75% (1500/2000)"
+  const match = line.match(/(\w+\s+\w+):\s+(\d+)%\s+\((\d+)\/(\d+)\)/)
+
+  if (match) {
+    return {
+      kind: 'generic',
+      title: match[1],
+      value: parseInt(match[2]) / 100,
+      description: `${match[3]} of ${match[4]}`
+    }
+  }
+
+  return null
+}
+```
+
 ### 2. Repository Model
 
 Define core repository data structure.
