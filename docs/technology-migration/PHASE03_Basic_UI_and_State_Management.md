@@ -750,65 +750,313 @@ Each banner type has a component that renders with appropriate message, icon, an
 
 **User clicks "Commit" button:**
 
-1. **UI Component** (`CommitMessage.tsx`):
-   ```typescript
-   onCommit = async () => {
-     await this.props.dispatcher.createCommit(
-       this.props.repository,
-       this.state.commitMessage,
-       this.props.stagedFiles
-     )
-   }
-   ```
+**Complete Flow with Timing:**
 
-2. **Dispatcher** (`dispatcher.ts`):
-   ```typescript
-   async createCommit(repo: Repository, message: string, files: FileChange[]) {
-     // Call git operation (Phase 2)
-     const sha = await createCommit(repo, message, files)
+```
+T+0ms:     User clicks "Commit" button
+           ↓
+T+5ms:     CommitMessage.onCommit() triggered
+           ├── Validate inputs (message not empty, files staged)
+           ├── Disable commit button (prevent double-click)
+           └── Call dispatcher.createCommit()
+               ↓
+T+10ms:    Dispatcher.createCommit()
+           ├── Log action: "Creating commit"
+           ├── Call Phase 2 git.createCommit()
+           │   ↓
+T+20ms:    │   Git.createCommit()
+           │   ├── git reset HEAD (clear staging)
+           │   ├── git add <files> (stage selected files)
+           │   ├── git commit -F - (create commit via stdin)
+           │   └── Parse SHA from output
+           │       ↓
+T+150ms:   │   ← Returns SHA: "abc123..."
+           │
+           ├── Update local state
+           ├── Call appStore._refreshRepository()
+           │   ↓
+T+160ms:   │   AppStore._refreshRepository()
+           │   ├── Call git.getStatus() → new status
+           │   ├── Call git.getCommits() → updated history
+           │   ├── Update repositoryStateManager
+           │   └── Call emitUpdate()
+           │       ↓
+T+300ms:   │   ← State refresh complete
+           │
+           ├── Set success banner
+           ├── Clear commit message
+           ├── Re-enable commit button
+           └── Log success
+               ↓
+T+310ms:   App.onDidUpdate() receives new state
+           ├── Call setState({ state: newState })
+           └── Trigger React re-render
+               ↓
+T+320ms:   React reconciliation
+           ├── Changes view re-renders (no staged files)
+           ├── History view re-renders (new commit visible)
+           ├── Banner appears at top
+           └── Commit button enabled
+               ↓
+T+350ms:   UI update complete ✓
+```
 
-     // Update state
-     await this.appStore._refreshRepository(repo)
+**Detailed Implementation:**
 
-     // Show success banner
-     this.setBanner({ type: BannerType.SuccessfulCommit, sha })
+**Step 1: UI Component** (`CommitMessage.tsx`):
 
-     // Clear commit message
-     this.appStore.setCommitMessage(repo, null)
-   }
-   ```
+```typescript
+class CommitMessage extends React.Component<ICommitMessageProps, ICommitMessageState> {
+  state = {
+    summary: '',
+    description: '',
+    isCommitting: false
+  }
 
-3. **AppStore** (`app-store.ts`):
-   ```typescript
-   async _refreshRepository(repo: Repository) {
-     // Load new status
-     const status = await getStatus(repo)
+  onCommit = async () => {
+    // Validation
+    if (!this.state.summary.trim()) {
+      this.props.dispatcher.showError(new Error('Commit message cannot be empty'))
+      return
+    }
 
-     // Load updated history
-     const commits = await getCommits(repo, 'HEAD', 100)
+    if (this.props.stagedFiles.length === 0) {
+      this.props.dispatcher.showError(new Error('No files staged for commit'))
+      return
+    }
 
-     // Update repository state
-     this.repositoryStateManager.updateStatus(repo, status)
-     this.repositoryStateManager.updateHistory(repo, commits)
+    // Prevent double-submit
+    if (this.state.isCommitting) {
+      return
+    }
 
-     // Emit state change
-     this.emitUpdate()
-   }
-   ```
+    this.setState({ isCommitting: true })
 
-4. **React Component** (`App.tsx`):
-   ```typescript
-   componentDidMount() {
-     this.props.appStore.onDidUpdate(state => {
-       this.setState({ state })  // Triggers re-render
-     })
-   }
-   ```
+    try {
+      await this.props.dispatcher.createCommit(
+        this.props.repository,
+        {
+          summary: this.state.summary,
+          description: this.state.description
+        },
+        this.props.stagedFiles
+      )
 
-5. **UI Updates**:
-   - Changes view refreshes (no more staged files)
-   - History view shows new commit
-   - Banner appears at top
+      // Success - clear form
+      this.setState({
+        summary: '',
+        description: '',
+        isCommitting: false
+      })
+    } catch (error) {
+      // Error handled by dispatcher error handlers
+      this.setState({ isCommitting: false })
+    }
+  }
+
+  render() {
+    return (
+      <div className="commit-message">
+        <TextArea
+          placeholder="Summary (required)"
+          value={this.state.summary}
+          onChange={summary => this.setState({ summary })}
+          disabled={this.state.isCommitting}
+        />
+        <TextArea
+          placeholder="Description (optional)"
+          value={this.state.description}
+          onChange={description => this.setState({ description })}
+          disabled={this.state.isCommitting}
+        />
+        <Button
+          onClick={this.onCommit}
+          disabled={this.state.isCommitting || !this.state.summary}
+          label={this.state.isCommitting ? 'Committing...' : 'Commit to main'}
+        />
+      </div>
+    )
+  }
+}
+```
+
+**Step 2: Dispatcher** (`dispatcher.ts`):
+
+```typescript
+class Dispatcher {
+  async createCommit(
+    repo: Repository,
+    message: ICommitMessage,
+    files: ReadonlyArray<WorkingDirectoryFileChange>
+  ): Promise<void> {
+    console.log(`[Dispatcher] Creating commit in ${repo.name}`)
+
+    try {
+      // Call git operation (Phase 2)
+      const sha = await createCommit(
+        repo,
+        `${message.summary}\n\n${message.description}`,
+        files,
+        false  // not amend
+      )
+
+      console.log(`[Dispatcher] Commit created: ${sha}`)
+
+      // Update state - this will trigger UI refresh
+      await this.appStore._refreshRepository(repo)
+
+      // Show success feedback
+      this.setBanner({
+        type: BannerType.SuccessfulCommit,
+        sha: sha.substring(0, 7),
+        onUndo: () => this.undoCommit(repo, sha)
+      })
+
+      // Clear commit message
+      await this.appStore.setCommitMessage(repo, null)
+
+      // Record stats
+      this.statsStore.increment('commits.created')
+    } catch (error) {
+      console.error(`[Dispatcher] Commit failed:`, error)
+
+      // Error handlers will process this and show appropriate UI
+      throw error
+    }
+  }
+}
+```
+
+**Step 3: AppStore** (`app-store.ts`):
+
+```typescript
+class AppStore {
+  private state: IAppState
+  private emitter = new Emitter()
+
+  async _refreshRepository(repo: Repository): Promise<void> {
+    console.log(`[AppStore] Refreshing repository ${repo.name}`)
+
+    try {
+      // Load fresh git status
+      const status = await getStatus(repo)
+
+      // Load updated commit history
+      const commits = await getCommits(repo, 'HEAD', 100)
+
+      // Load branches (current might have changed)
+      const branches = await getBranches(repo, 'refs/heads/', 'refs/remotes/')
+      const currentBranch = branches.find(b => b.type === BranchType.Local && b.isHead)
+
+      // Load tags
+      const tags = await getTags(repo)
+
+      // Load ahead/behind counts
+      const aheadBehind = currentBranch && currentBranch.upstream
+        ? await getAheadBehind(repo, currentBranch.name, currentBranch.upstream)
+        : null
+
+      // Update repository state cache
+      this.repositoryStateManager.updateStatus(repo, status)
+      this.repositoryStateManager.updateHistory(repo, {
+        history: commits,
+        hasMore: commits.length === 100
+      })
+      this.repositoryStateManager.updateBranches(repo, branches, currentBranch)
+      this.repositoryStateManager.updateTags(repo, tags)
+      this.repositoryStateManager.updateAheadBehind(repo, aheadBehind)
+
+      // Emit state change to trigger UI update
+      this.emitUpdate()
+
+      console.log(`[AppStore] Repository refreshed successfully`)
+    } catch (error) {
+      console.error(`[AppStore] Failed to refresh repository:`, error)
+      throw error
+    }
+  }
+
+  private emitUpdate() {
+    // Emit change event
+    this.emitter.emit('did-update', this.state)
+  }
+
+  onDidUpdate(fn: (state: IAppState) => void): Disposable {
+    return this.emitter.on('did-update', fn)
+  }
+}
+```
+
+**Step 4: React Component** (`App.tsx`):
+
+```typescript
+class App extends React.Component<IAppProps, IAppState> {
+  private unsubscribe: Disposable | null = null
+
+  componentDidMount() {
+    // Subscribe to store updates
+    this.unsubscribe = this.props.appStore.onDidUpdate(state => {
+      console.log('[App] State updated, re-rendering')
+      this.setState({ state })  // Triggers React re-render
+    })
+
+    // Load initial state
+    const initialState = this.props.appStore.getState()
+    this.setState({ state: initialState })
+  }
+
+  componentWillUnmount() {
+    // Cleanup subscription
+    if (this.unsubscribe) {
+      this.unsubscribe.dispose()
+    }
+  }
+
+  render() {
+    const { state } = this.state
+
+    if (!state) {
+      return <Loading />
+    }
+
+    return (
+      <div id="desktop-app-contents">
+        <TitleBar />
+        <Toolbar
+          currentBranch={state.currentBranch}
+          aheadBehind={state.aheadBehind}
+        />
+        {this.renderRepository(state)}
+        {this.renderBanner(state.currentBanner)}
+      </div>
+    )
+  }
+}
+```
+
+**Step 5: UI Updates**:
+
+After `emitUpdate()` is called:
+
+1. **Changes View** (`Changes.tsx`):
+   - Receives new `workingDirectory` prop with no staged files
+   - Re-renders file list (now empty)
+   - Clears commit message box
+   - Updates commit button state
+
+2. **History View** (`History.tsx`):
+   - Receives new `commitHistory` prop with new commit at top
+   - Re-renders commit list with new commit highlighted
+   - Virtual scroll updates to show new item
+
+3. **Banner** (`Banner.tsx`):
+   - Receives new `currentBanner` prop
+   - Renders success message: "Successfully created commit abc123"
+   - Shows "Undo" button
+
+4. **Toolbar** (`Toolbar.tsx`):
+   - Receives updated `aheadBehind` prop (now 1 commit ahead)
+   - Updates push/pull button to show "Push 1 commit"
 
 ### 10. Styling Architecture
 
