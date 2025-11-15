@@ -127,21 +127,98 @@ Content-Type: application/json
 3. Pass diff via stdin
 4. Parse commit message from stdout
 
-**Implementation Details:**
+**Complete Workflow:**
+
+```
+User clicks "Generate with Claude Code"
+       ↓
+T+0ms: Check provider availability
+       ├── Platform check: Windows vs Unix
+       ├── Windows: Check WSL (wsl --version)
+       ├── Unix: Check CLI (which claude)
+       └── Return available status
+           ↓
+T+50ms: Validate diff
+       ├── Check diff not empty
+       ├── Check size < 20MB
+       └── Sanitize for security
+           ↓
+T+100ms: Build command
+       ├── Windows: ['wsl', 'claude', '--model', 'haiku', ...]
+       ├── Unix: ['claude', '--model', 'haiku', ...]
+       └── Include prompt template
+           ↓
+T+150ms: Spawn subprocess
+       ├── Set stdin to diff content
+       ├── Set timeout to 120 seconds
+       ├── Capture stdout for result
+       └── Capture stderr for errors
+           ↓
+[Claude API processes diff - 5-30 seconds]
+           ↓
+T+15000ms: Process completes
+       ├── Check exit code
+       ├── Parse stdout for message
+       └── Validate format
+           ↓
+T+15100ms: Return commit message
+       ├── Split summary/description
+       ├── Validate length limits
+       └── Return to UI
+           ↓
+T+15200ms: Fill commit message box ✓
+```
+
+**Complete Implementation:**
 
 **Availability Check:**
 ```typescript
-async isAvailable(): Promise<boolean> {
-  const isWindows = process.platform === 'win32'
+// app/src/lib/alternative-commit-providers/providers/claude-provider.ts
+export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
+  readonly id = 'claude'
+  readonly displayName = 'Claude Code'
+  readonly icon = OcticonSymbol.sparkle
 
-  if (isWindows) {
-    // Check if WSL is available
-    const result = await spawn('wsl', ['--version'], { timeout: 5000 })
-    return result.exitCode === 0
-  } else {
-    // Check if claude command exists
-    const result = await spawn('which', ['claude'], { timeout: 5000 })
-    return result.exitCode === 0
+  async isAvailable(): Promise<boolean> {
+    const isWindows = process.platform === 'win32'
+
+    console.log(`[ClaudeProvider] Checking availability (platform: ${process.platform})`)
+
+    try {
+      if (isWindows) {
+        // On Windows, require WSL
+        const wslResult = await this.spawnProcess('wsl', ['--version'], {
+          timeout: 5000
+        })
+
+        if (wslResult.exitCode !== 0) {
+          console.log('[ClaudeProvider] WSL not available')
+          return false
+        }
+
+        // Check if claude is installed in WSL
+        const claudeResult = await this.spawnProcess('wsl', ['which', 'claude'], {
+          timeout: 5000
+        })
+
+        const available = claudeResult.exitCode === 0
+        console.log(`[ClaudeProvider] WSL available, Claude CLI: ${available}`)
+        return available
+
+      } else {
+        // On Unix, check if claude command exists
+        const result = await this.spawnProcess('which', ['claude'], {
+          timeout: 5000
+        })
+
+        const available = result.exitCode === 0
+        console.log(`[ClaudeProvider] Claude CLI available: ${available}`)
+        return available
+      }
+    } catch (error) {
+      console.error('[ClaudeProvider] Availability check failed:', error)
+      return false
+    }
   }
 }
 ```
@@ -149,39 +226,244 @@ async isAvailable(): Promise<boolean> {
 **Generate Commit Message:**
 ```typescript
 async generateCommitMessage(diff: string): Promise<IProviderCommitMessage> {
+  // Step 1: Validate diff
+  console.log('[ClaudeProvider] Generating commit message')
   this.validateDiff(diff)
 
-  // Check diff size (max 20MB)
-  if (diff.length > 20 * 1024 * 1024) {
-    throw new ProviderError('Diff too large', 'DIFF_TOO_LARGE', false)
-  }
-
-  // Build command
-  const command = isWindows
-    ? 'wsl'
-    : 'claude'
-
-  const args = isWindows
-    ? ['claude', '--model', 'haiku', '--prompt', 'Write a git commit message...']
-    : ['--model', 'haiku', '--prompt', 'Write a git commit message...']
-
-  // Spawn subprocess
-  const result = await spawn(command, args, {
-    stdin: diff,
-    timeout: 120000  // 2 minutes
-  })
-
-  if (result.exitCode !== 0) {
+  // Step 2: Check diff size (max 20MB for Claude)
+  const maxSize = 20 * 1024 * 1024
+  if (diff.length > maxSize) {
+    console.error(`[ClaudeProvider] Diff too large: ${diff.length} bytes (max ${maxSize})`)
     throw new ProviderError(
-      `Claude CLI failed: ${result.stderr}`,
-      'CLI_ERROR',
+      `Diff is ${(diff.length / 1024 / 1024).toFixed(1)}MB. Maximum is 20MB for Claude Code.`,
+      'DIFF_TOO_LARGE',
       false
     )
   }
 
-  // Parse response
-  const message = parseCommitMessage(result.stdout)
-  return message
+  console.log(`[ClaudeProvider] Diff size: ${(diff.length / 1024).toFixed(1)}KB`)
+
+  // Step 3: Build prompt
+  const prompt = this.buildPrompt()
+  const isWindows = process.platform === 'win32'
+
+  // Step 4: Build command
+  const command = isWindows ? 'wsl' : 'claude'
+  const baseArgs = isWindows
+    ? ['claude', '--model', 'haiku', '--prompt', prompt]
+    : ['--model', 'haiku', '--prompt', prompt]
+
+  console.log(`[ClaudeProvider] Command: ${command} ${baseArgs.join(' ')}`)
+
+  // Step 5: Spawn subprocess
+  try {
+    const result = await this.spawnProcess(command, baseArgs, {
+      stdin: diff,
+      timeout: 120000,  // 2 minutes
+      encoding: 'utf8'
+    })
+
+    // Step 6: Check exit code
+    if (result.exitCode !== 0) {
+      console.error(`[ClaudeProvider] CLI failed with exit code ${result.exitCode}`)
+      console.error(`[ClaudeProvider] stderr: ${result.stderr}`)
+
+      // Parse specific errors
+      if (result.stderr.includes('API key')) {
+        throw new ProviderError(
+          'Claude API key not configured. Run: claude config set api_key',
+          'NO_API_KEY',
+          false
+        )
+      }
+
+      if (result.stderr.includes('rate limit')) {
+        throw new ProviderError(
+          'Claude API rate limit exceeded. Please wait and try again.',
+          'RATE_LIMIT',
+          true  // retryable
+        )
+      }
+
+      if (result.stderr.includes('timeout')) {
+        throw new ProviderError(
+          'Claude API request timed out. The diff may be too large.',
+          'TIMEOUT',
+          true  // retryable
+        )
+      }
+
+      // Generic error
+      throw new ProviderError(
+        `Claude CLI failed: ${result.stderr.trim() || 'Unknown error'}`,
+        'CLI_ERROR',
+        false
+      )
+    }
+
+    // Step 7: Parse response
+    console.log('[ClaudeProvider] Successfully received response')
+
+    const message = this.parseCommitMessage(result.stdout.trim())
+
+    console.log(`[ClaudeProvider] Generated message: "${message.summary}"`)
+
+    return message
+
+  } catch (error) {
+    if (error instanceof ProviderError) {
+      throw error
+    }
+
+    console.error('[ClaudeProvider] Unexpected error:', error)
+    throw new ProviderError(
+      `Failed to generate commit message: ${error.message}`,
+      'UNKNOWN_ERROR',
+      false
+    )
+  }
+}
+
+private buildPrompt(): string {
+  return `You are a Git commit message generator. Given a git diff, write a concise commit message following these rules:
+
+1. First line: < 50 characters, imperative mood (e.g., "Add", "Fix", "Update")
+2. Blank line
+3. Body: Explain what and why, not how. Wrap at 72 characters.
+4. Focus on the most important changes
+5. Use conventional commit types when appropriate: feat, fix, docs, refactor, test, chore
+
+Output ONLY the commit message, no explanations or markdown formatting.
+
+Examples:
+- "Fix parser error handling\n\nAdd proper error recovery for invalid input\nto prevent crashes when processing malformed files."
+- "Add user authentication system\n\nImplement JWT-based authentication with refresh\ntokens to improve security and user experience."
+
+Now, analyze the following diff and generate an appropriate commit message:`
+}
+
+private parseCommitMessage(output: string): IProviderCommitMessage {
+  // Remove any markdown code blocks if present
+  let cleaned = output
+    .replace(/^```.*\n/gm, '')
+    .replace(/^```$/gm, '')
+    .trim()
+
+  // Split into summary and description
+  const lines = cleaned.split('\n')
+  const summary = lines[0].trim()
+
+  // Validate summary
+  if (!summary) {
+    throw new ProviderError(
+      'Claude returned empty commit message',
+      'EMPTY_RESPONSE',
+      false
+    )
+  }
+
+  if (summary.length > 72) {
+    console.warn(`[ClaudeProvider] Summary too long (${summary.length} chars), truncating`)
+    // Truncate but warn
+  }
+
+  // Extract description (everything after first blank line)
+  let description: string | undefined
+
+  const blankLineIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '')
+
+  if (blankLineIndex !== -1 && blankLineIndex < lines.length - 1) {
+    description = lines
+      .slice(blankLineIndex + 1)
+      .join('\n')
+      .trim()
+
+    if (!description) {
+      description = undefined
+    }
+  }
+
+  return {
+    summary: summary,
+    description: description
+  }
+}
+```
+
+**Subprocess Execution Helper:**
+
+```typescript
+private async spawnProcess(
+  command: string,
+  args: string[],
+  options: {
+    stdin?: string
+    timeout?: number
+    encoding?: string
+  } = {}
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+
+  const { spawn } = require('child_process')
+
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+
+    // Set up timeout
+    const timeout = options.timeout || 30000
+    const timer = setTimeout(() => {
+      killed = true
+      process.kill('SIGTERM')
+
+      // Force kill after 5 seconds
+      setTimeout(() => {
+        if (!process.killed) {
+          process.kill('SIGKILL')
+        }
+      }, 5000)
+    }, timeout)
+
+    // Collect output
+    process.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString(options.encoding || 'utf8')
+    })
+
+    process.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString(options.encoding || 'utf8')
+    })
+
+    // Handle completion
+    process.on('exit', (code: number) => {
+      clearTimeout(timer)
+
+      if (killed) {
+        reject(new Error(`Process timed out after ${timeout}ms`))
+      } else {
+        resolve({
+          exitCode: code || 0,
+          stdout: stdout,
+          stderr: stderr
+        })
+      }
+    })
+
+    // Handle errors
+    process.on('error', (error: Error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+
+    // Send stdin if provided
+    if (options.stdin) {
+      process.stdin.write(options.stdin)
+      process.stdin.end()
+    }
+  })
 }
 ```
 
