@@ -100,134 +100,397 @@ With existing account:
 
 #### 2.3 GitHub.com OAuth Flow
 
+**Complete OAuth Flow with Timing and State Machine:**
+
+```
+User Action: Click "Sign in to GitHub.com"
+       ↓
+T+0ms: Frontend: dispatcher.beginDotComSignIn()
+       ├── Set UI state: SignInStep.Authentication
+       ├── Generate CSRF token (UUID)
+       ├── Store CSRF token in memory
+       └── Build authorization URL
+           ↓
+T+50ms: Open browser with authorization URL
+       ├── https://github.com/login/oauth/authorize
+       └── User sees GitHub authorization page
+           ↓
+[User authorizes app in browser - variable time]
+           ↓
+GitHub redirects: x-github-desktop-auth://oauth?code=XXX&state=YYY
+       ↓
+T+5000ms: Backend: URL handler triggered (app.on('open-url'))
+       ├── Parse callback URL
+       ├── Extract code and state parameters
+       └── Send to frontend via IPC
+           ↓
+T+5010ms: Frontend: receives OAuth callback
+       ├── Validate state matches CSRF token
+       ├── Extract authorization code
+       └── Call dispatcher.completeOAuth(code, state)
+           ↓
+T+5020ms: Exchange code for access token
+       ├── POST https://github.com/login/oauth/access_token
+       ├── Include client_id, client_secret, code
+       └── Receive access_token
+           ↓
+T+5200ms: Fetch user profile
+       ├── GET https://api.github.com/user
+       ├── Include Authorization: Bearer {token}
+       └── Receive user data
+           ↓
+T+5400ms: Create and store account
+       ├── Create Account object
+       ├── Store token in secure keychain
+       ├── Save account to AccountsStore
+       └── Update UI state: SignInStep.Success
+           ↓
+T+5500ms: Sign-in complete ✓
+```
+
+**Detailed Implementation:**
+
 **Step 1: User clicks "Sign in to GitHub.com"**
 
-Frontend initiates sign-in:
 ```typescript
-dispatcher.beginDotComSignIn()
-```
+// Frontend: app/src/ui/sign-in/sign-in.tsx
+class SignIn extends React.Component {
+  onSignInToDotCom = () => {
+    this.props.dispatcher.beginDotComSignIn()
+  }
 
-**Step 2: Generate CSRF token and open browser**
-
-Reference: `app/src/lib/stores/sign-in-store.ts:303`
-
-```typescript
-// Generate random state for CSRF protection
-const csrfToken = uuid()
-
-// Build authorization URL
-const authURL = getOAuthAuthorizationURL(
-  'https://api.github.com',
-  csrfToken
-)
-
-// Open in default browser
-shell.openExternal(authURL)
-```
-
-**Authorization URL format** (reference: `app/src/lib/api.ts:2347`):
-```
-https://github.com/login/oauth/authorize
-  ?client_id=CLIENT_ID
-  &scope=repo,user,workflow
-  &state=CSRF_TOKEN
-```
-
-**Step 3: User authorizes app in browser**
-
-GitHub redirects to callback URL:
-```
-x-github-desktop-auth://oauth?code=AUTH_CODE&state=CSRF_TOKEN
-```
-
-**Step 4: App receives callback**
-
-The app registers a custom URL protocol handler: `x-github-desktop-auth://`
-
-**URL Handler** (reference: `app/src/main-process/main.ts`):
-- Listen for URL open events
-- Parse OAuth callback URL
-- Extract code and state parameters
-- Send to renderer via IPC
-
-**Step 5: Exchange code for access token**
-
-Reference: `app/src/lib/stores/sign-in-store.ts:350`
-
-```typescript
-// Exchange authorization code for access token
-const token = await requestOAuthToken(endpoint, authCode)
-```
-
-**Token Request** (reference: `app/src/lib/api.ts:2360-2382`):
-```http
-POST https://github.com/login/oauth/access_token
-Content-Type: application/json
-
-{
-  "client_id": "CLIENT_ID",
-  "client_secret": "CLIENT_SECRET",
-  "code": "AUTH_CODE"
+  render() {
+    return (
+      <div className="sign-in">
+        <Button onClick={this.onSignInToDotCom}>
+          Sign in to GitHub.com
+        </Button>
+      </div>
+    )
+  }
 }
 ```
 
-**Response:**
-```json
-{
-  "access_token": "gho_xxxxxxxxxxxx",
-  "token_type": "bearer",
-  "scope": "repo,user,workflow"
+**Step 2: Initialize OAuth flow**
+
+```typescript
+// app/src/ui/dispatcher/dispatcher.ts
+class Dispatcher {
+  async beginDotComSignIn(): Promise<void> {
+    const endpoint = 'https://api.github.com'
+
+    // Update UI state
+    await this.signInStore.setSignInState({
+      step: SignInStep.Authentication,
+      endpoint: endpoint,
+      loading: true
+    })
+
+    // Generate CSRF protection token
+    const csrfToken = uuid()
+    this.signInStore.setOAuthState(csrfToken)
+
+    // Build authorization URL
+    const authURL = this.buildAuthorizationURL(endpoint, csrfToken)
+
+    console.log('[OAuth] Opening browser for authorization')
+
+    // Open in default browser
+    await shell.openExternal(authURL)
+
+    // Set timeout for OAuth flow (5 minutes)
+    this.setOAuthTimeout(300000)
+  }
+
+  private buildAuthorizationURL(endpoint: string, state: string): string {
+    const clientId = getOAuthClientId(endpoint)
+    const scopes = ['repo', 'user', 'workflow']
+
+    const baseURL = endpoint === 'https://api.github.com'
+      ? 'https://github.com/login/oauth/authorize'
+      : `${endpoint.replace('/api/v3', '')}/login/oauth/authorize`
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      scope: scopes.join(','),
+      state: state
+    })
+
+    return `${baseURL}?${params.toString()}`
+  }
+
+  private setOAuthTimeout(ms: number): void {
+    setTimeout(() => {
+      const state = this.signInStore.getSignInState()
+
+      // If still waiting for OAuth callback, show timeout
+      if (state?.step === SignInStep.Authentication && state.loading) {
+        this.signInStore.setSignInState({
+          ...state,
+          error: new Error('OAuth flow timed out. Please try again.'),
+          loading: false
+        })
+      }
+    }, ms)
+  }
 }
 ```
 
-**Step 6: Fetch user info**
+**Step 3: Register URL handler (Backend)**
 
 ```typescript
-const user = await fetchUser(endpoint, token)
-```
+// app/src/main-process/main.ts
+app.on('open-url', async (event, url) => {
+  event.preventDefault()
 
-**User API Request:**
-```http
-GET https://api.github.com/user
-Authorization: Bearer ACCESS_TOKEN
-```
+  console.log('[OAuth] Received URL callback:', url)
 
-**Response:**
-```json
-{
-  "login": "username",
-  "id": 12345,
-  "avatar_url": "https://avatars.githubusercontent.com/u/12345",
-  "name": "Full Name",
-  "email": "user@example.com",
-  "plan": { "name": "free" }
+  // Parse callback URL
+  if (url.startsWith('x-github-desktop-auth://')) {
+    const parsedURL = new URL(url)
+    const code = parsedURL.searchParams.get('code')
+    const state = parsedURL.searchParams.get('state')
+    const error = parsedURL.searchParams.get('error')
+
+    if (error) {
+      console.error('[OAuth] Authorization error:', error)
+
+      // Send error to renderer
+      mainWindow.webContents.send('oauth-callback', {
+        error: error,
+        error_description: parsedURL.searchParams.get('error_description')
+      })
+      return
+    }
+
+    if (!code || !state) {
+      console.error('[OAuth] Invalid callback - missing code or state')
+      return
+    }
+
+    // Send to renderer for processing
+    mainWindow.webContents.send('oauth-callback', {
+      code,
+      state
+    })
+
+    // Bring window to front
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
+
+// Register custom protocol (during app initialization)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('x-github-desktop-auth', process.execPath, [path.resolve(process.argv[1])])
+  }
+} else {
+  app.setAsDefaultProtocolClient('x-github-desktop-auth')
 }
 ```
 
-**Step 7: Create Account object**
+**Step 4: Handle OAuth callback (Frontend)**
 
 ```typescript
-const account = new Account(
-  user.login,
-  endpoint,
-  token,
-  user.emails,
-  user.avatar_url,
-  user.id,
-  user.name,
-  user.plan?.name
-)
+// app/src/ui/index.tsx or sign-in store
+ipcRenderer.on('oauth-callback', async (event, data) => {
+  console.log('[OAuth] Received callback from main process')
+
+  if (data.error) {
+    await dispatcher.handleOAuthError(data.error, data.error_description)
+    return
+  }
+
+  const { code, state } = data
+
+  // Validate CSRF token
+  const expectedState = signInStore.getOAuthState()
+  if (state !== expectedState) {
+    console.error('[OAuth] CSRF token mismatch!')
+    await dispatcher.handleOAuthError(
+      'invalid_state',
+      'Security validation failed. Please try again.'
+    )
+    return
+  }
+
+  // Clear CSRF token
+  signInStore.clearOAuthState()
+
+  // Complete OAuth flow
+  await dispatcher.completeOAuth(code)
+})
 ```
 
-**Step 8: Store account**
+**Step 5: Exchange code for token**
 
 ```typescript
-await accountsStore.addAccount(account)
+// app/src/ui/dispatcher/dispatcher.ts
+async completeOAuth(authCode: string): Promise<void> {
+  const state = this.signInStore.getSignInState()
+  if (!state || !state.endpoint) {
+    throw new Error('Invalid sign-in state')
+  }
+
+  const endpoint = state.endpoint
+
+  console.log('[OAuth] Exchanging authorization code for access token')
+
+  try {
+    // Update UI: show loading
+    await this.signInStore.setSignInState({
+      ...state,
+      loading: true,
+      loadingText: 'Completing sign in...'
+    })
+
+    // Exchange code for token
+    const tokenResponse = await this.exchangeCodeForToken(endpoint, authCode)
+    const accessToken = tokenResponse.access_token
+
+    console.log('[OAuth] Access token received')
+
+    // Fetch user information
+    console.log('[OAuth] Fetching user information')
+    const user = await this.fetchUser(endpoint, accessToken)
+
+    console.log(`[OAuth] Signed in as ${user.login}`)
+
+    // Create account object
+    const account = new Account(
+      user.login,
+      endpoint,
+      accessToken,
+      user.emails || [],
+      user.avatar_url,
+      user.id,
+      user.name || user.login,
+      user.plan?.name
+    )
+
+    // Store account
+    await this.accountsStore.addAccount(account)
+
+    // Store token in secure keychain
+    await this.storeToken(account)
+
+    console.log('[OAuth] Account stored successfully')
+
+    // Update UI: success
+    await this.signInStore.setSignInState({
+      step: SignInStep.Success,
+      endpoint: endpoint,
+      account: account,
+      loading: false
+    })
+
+    // Record analytics
+    this.statsStore.increment('account.added')
+
+    // Close sign-in dialog after delay
+    setTimeout(() => {
+      this.closePopup()
+    }, 1500)
+
+  } catch (error) {
+    console.error('[OAuth] Failed to complete sign in:', error)
+
+    await this.signInStore.setSignInState({
+      ...state,
+      error: error,
+      loading: false
+    })
+  }
+}
+
+private async exchangeCodeForToken(
+  endpoint: string,
+  code: string
+): Promise<{ access_token: string; token_type: string; scope: string }> {
+  const clientId = getOAuthClientId(endpoint)
+  const clientSecret = getOAuthClientSecret(endpoint)
+
+  const tokenURL = endpoint === 'https://api.github.com'
+    ? 'https://github.com/login/oauth/access_token'
+    : `${endpoint.replace('/api/v3', '')}/login/oauth/access_token`
+
+  const response = await fetch(tokenURL, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code
+    })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(`Token exchange failed: ${errorData.error_description || errorData.error}`)
+  }
+
+  const data = await response.json()
+
+  if (data.error) {
+    throw new Error(`Token exchange failed: ${data.error_description || data.error}`)
+  }
+
+  return data
+}
+
+private async fetchUser(endpoint: string, token: string): Promise<IAPIIdentity> {
+  const response = await fetch(`${endpoint}/user`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch user: ${response.statusText}`)
+  }
+
+  return await response.json()
+}
+
+private async storeToken(account: Account): Promise<void> {
+  const key = `${account.endpoint}|${account.login}`
+  await tokenStore.setItem(key, account.token)
+}
 ```
 
-Stores account in:
-- Memory (AccountsStore)
-- Persistent storage (secure credential store)
+**Step 6: Error Handling**
+
+```typescript
+async handleOAuthError(error: string, description?: string): Promise<void> {
+  const errorMessages: Record<string, string> = {
+    'access_denied': 'You denied access to GitHub Desktop. Please try again if you want to sign in.',
+    'invalid_state': 'Security validation failed. This may be due to a timeout. Please try again.',
+    'timeout': 'The sign-in process timed out. Please try again.'
+  }
+
+  const message = errorMessages[error] || description || 'An unknown error occurred during sign in.'
+
+  await this.signInStore.setSignInState({
+    step: SignInStep.Authentication,
+    error: new Error(message),
+    loading: false
+  })
+}
+```
+
+**Security Considerations:**
+
+1. **CSRF Protection**: Always validate state parameter matches stored CSRF token
+2. **Token Storage**: Store tokens in OS keychain, never in localStorage
+3. **HTTPS Only**: Reject any non-HTTPS endpoints (except localhost for dev)
+4. **Client Secret**: In production, client secret should be protected (server-side OAuth preferred)
+5. **Timeout**: Implement timeout for OAuth flow (default 5 minutes)
+6. **Single Use**: Clear CSRF token after use to prevent replay attacks
 
 #### 2.4 GitHub Enterprise Sign-In
 
