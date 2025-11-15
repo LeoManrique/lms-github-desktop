@@ -133,69 +133,422 @@ When git is mid-merge, `.git/MERGE_HEAD` contains the SHA of the commit being me
 
 **When merge/rebase/cherry-pick fails** due to conflicts, user must resolve them.
 
-#### 2.1 Conflict Detection
+#### 2.1 Complete Conflict Resolution Workflow
 
-**From status** (Phase 2): Files with `AppFileStatusKind.Conflicted` status
+**State Machine:**
 
-**Conflicted File Status:**
+```
+Git Operation (merge/rebase/cherry-pick)
+       ↓
+   Exit code 1 + "CONFLICT" in stderr
+       ↓
+[CONFLICT DETECTED]
+       ↓
+Parse Conflicts:
+├── Read git status --porcelain=v2
+├── Identify conflicted files (u entry)
+├── For each file:
+│   ├── Run git ls-files -u <file>
+│   ├── Determine conflict type from stages
+│   └── Count conflict markers if content conflict
+       ↓
+Update Repository State:
+├── conflictState = {
+│     kind: 'merge' | 'rebase' | 'cherryPick',
+│     currentBranch: string,
+│     conflictedFiles: File[],
+│     manualResolutions: Map<path, resolution>
+│   }
+└── currentBranchCheckout = ConflictsWithProgress
+       ↓
+Update UI:
+┌─────────────────────────────────────────────────┐
+│ ⚠ 3 conflicted files - resolve to continue     │
+│ [Abort] [Open in Editor] [Open Merge Tool]     │
+└─────────────────────────────────────────────────┘
+       ↓
+Changes View shows conflicted files:
+  ✗ src/file1.ts  (Both Modified)
+  ✗ src/file2.ts  (Both Modified)
+  ✗ docs/readme.md (Deleted By Them)
+       ↓
+User Resolves Each File:
+       ├─ Option A: Choose Version
+       │    ├── Right-click → "Use Ours"
+       │    ├── git checkout --ours <file>
+       │    ├── git add <file>
+       │    └── Mark resolved ✓
+       │
+       ├─ Option B: Manual Edit
+       │    ├── Open in editor
+       │    ├── Find <<<<<<< markers
+       │    ├── Edit content
+       │    ├── Remove markers
+       │    ├── Save file
+       │    ├── git add <file>
+       │    └── Mark resolved ✓
+       │
+       └─ Option C: Merge Tool
+            ├── Launch external merge tool
+            ├── 3-way diff shown
+            ├── User resolves in tool
+            ├── Tool saves result
+            ├── Tool stages file (git add)
+            └── Mark resolved ✓
+       ↓
+Check Resolution Status:
+├── Count unresolved files
+└── Enable/disable "Continue" button
+       ↓
+All Resolved? → User clicks "Continue"
+       ↓
+Complete Operation:
+├── If merge: git commit --no-edit
+├── If rebase: git rebase --continue
+└── If cherry-pick: git cherry-pick --continue
+       ↓
+Clear Conflict State:
+├── conflictState = null
+├── currentBranchCheckout = CheckoutStepKind.CheckingOut
+└── Refresh repository
+       ↓
+Show Success ✓
+```
+
+#### 2.2 Conflict Detection Implementation
+
+**Detecting Conflicts from Git Status:**
+
 ```typescript
-interface ConflictedFileStatus {
-  kind: AppFileStatusKind.Conflicted
-  entry: UnmergedEntry
-  conflictMarkerCount: number  // Number of <<<<<<< markers
+// app/src/lib/git/status.ts
+async function parseConflictedFiles(
+  repository: Repository,
+  statusOutput: string
+): Promise<WorkingDirectoryFileChange[]> {
+
+  const conflictedFiles: WorkingDirectoryFileChange[] = []
+
+  // Parse git status --porcelain=v2 output
+  const lines = statusOutput.split('\n')
+
+  for (const line of lines) {
+    // Unmerged entries start with 'u'
+    // Format: u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
+    if (line.startsWith('u ')) {
+      const parts = line.split(' ')
+      const conflictType = parts[1]  // XY codes like 'UU', 'AA', 'DD'
+      const path = parts.slice(10).join(' ')
+
+      const conflictDetails = await analyzeConflict(repository, path, conflictType)
+
+      conflictedFiles.push({
+        path: path,
+        status: {
+          kind: AppFileStatusKind.Conflicted,
+          entry: conflictDetails.entry,
+          conflictMarkerCount: conflictDetails.markerCount
+        }
+      })
+    }
+  }
+
+  return conflictedFiles
+}
+
+// Analyze specific conflict
+async function analyzeConflict(
+  repository: Repository,
+  path: string,
+  conflictType: string
+): Promise<ConflictDetails> {
+
+  /*
+  Conflict type codes (XY):
+  DD - both deleted
+  AU - added by us
+  UD - deleted by them
+  UA - added by them
+  DU - deleted by us
+  AA - both added
+  UU - both modified
+  */
+
+  // Get index entries for all 3 stages
+  const result = await git(
+    ['ls-files', '-u', '-z', '--', path],
+    repository.path,
+    'ls-files-unmerged'
+  )
+
+  /*
+  Output format:
+  <mode> <hash> <stage>\t<path>\0
+
+  Stage 1 = common ancestor (base)
+  Stage 2 = ours (HEAD)
+  Stage 3 = theirs (merging branch)
+  */
+
+  const entries = parseUnmergedEntries(result.stdout)
+
+  const base = entries.find(e => e.stage === 1)
+  const ours = entries.find(e => e.stage === 2)
+  const theirs = entries.find(e => e.stage === 3)
+
+  // Determine conflict action
+  let action: ConflictedFileAction
+
+  if (conflictType === 'UU' && base && ours && theirs) {
+    // Both modified - content conflict
+    action = ConflictedFileAction.BothModified
+
+    // Count conflict markers
+    const markerCount = await countConflictMarkers(repository, path)
+
+    return {
+      entry: {
+        kind: 'conflicted',
+        action: action,
+        us: { mode: ours.mode, sha: ours.sha },
+        them: { mode: theirs.mode, sha: theirs.sha },
+        base: { mode: base.mode, sha: base.sha }
+      },
+      markerCount: markerCount
+    }
+  }
+
+  if (conflictType === 'AA' && !base && ours && theirs) {
+    // Both added
+    action = ConflictedFileAction.BothAdded
+  }
+
+  if (conflictType === 'DD' && base && !ours && !theirs) {
+    // Both deleted
+    action = ConflictedFileAction.BothDeleted
+  }
+
+  if (conflictType === 'DU' && base && !ours && theirs) {
+    // Deleted by us
+    action = ConflictedFileAction.DeletedByUs
+  }
+
+  if (conflictType === 'UD' && base && ours && !theirs) {
+    // Deleted by them
+    action = ConflictedFileAction.DeletedByThem
+  }
+
+  // ... handle other conflict types
+
+  return {
+    entry: {
+      kind: 'conflicted',
+      action: action,
+      us: ours ? { mode: ours.mode, sha: ours.sha } : null,
+      them: theirs ? { mode: theirs.mode, sha: theirs.sha } : null,
+      base: base ? { mode: base.mode, sha: base.sha } : null
+    },
+    markerCount: 0
+  }
+}
+
+// Count conflict markers in file
+async function countConflictMarkers(
+  repository: Repository,
+  path: string
+): Promise<number> {
+
+  const fullPath = Path.join(repository.path, path)
+
+  try {
+    const content = await fs.promises.readFile(fullPath, 'utf8')
+
+    // Count occurrences of conflict marker start
+    const matches = content.match(/^<{7} /gm)
+    return matches ? matches.length : 0
+
+  } catch (error) {
+    // Binary file or read error
+    return 0
+  }
 }
 ```
 
-**Conflict Types:**
-- **Both Added** - Same file added in both branches
-- **Both Modified** - Same lines modified in both branches
-- **Both Deleted** - File deleted in both branches
-- **Added By Us** - We added, they modified
-- **Added By Them** - They added, we modified
-- **Deleted By Us** - We deleted, they modified
-- **Deleted By Them** - They deleted, we modified
+#### 2.3 Conflict Resolution Actions
 
-#### 2.2 Conflict Markers
+**Option 1: Choose Version (Ours or Theirs)**
 
-Git inserts conflict markers into files:
-
-```
-Normal content before conflict
-
-<<<<<<< HEAD (Current Change)
-Our version of the code
-=======
-Their version of the code
->>>>>>> branch-name (Incoming Change)
-
-Normal content after conflict
-```
-
-**Counting Conflict Markers:**
-Scan file for `<<<<<<<` to count unresolved conflicts.
-
-#### 2.3 Manual Conflict Resolution
-
-**User has three choices for each conflict:**
-
-**Option 1: Keep Ours (Current)**
-- Use version from current branch
-- Discard incoming changes
-
-**Option 2: Keep Theirs (Incoming)**
-- Use version from merging branch
-- Discard current changes
-
-**Option 3: Manual Edit**
-- User edits file in external editor
-- Removes conflict markers
-- Combines changes as desired
-
-**Manual Resolution Model:**
 ```typescript
-enum ManualConflictResolution {
-  ours,    // Keep our version
-  theirs,  // Keep their version
+// app/src/lib/git/checkout.ts
+async function checkoutConflictedFile(
+  repository: Repository,
+  file: WorkingDirectoryFileChange,
+  resolution: ManualConflictResolution
+): Promise<void> {
+
+  const flag = resolution === ManualConflictResolution.ours
+    ? '--ours'
+    : '--theirs'
+
+  console.log(`[Git] Resolving ${file.path} with ${resolution}`)
+
+  // Checkout specific version
+  await git(
+    ['checkout', flag, '--', file.path],
+    repository.path,
+    `checkout-${resolution}`
+  )
+
+  // Stage the resolved file
+  await git(
+    ['add', '--', file.path],
+    repository.path,
+    'stage-resolved'
+  )
+
+  console.log(`[Git] ${file.path} resolved with ${resolution}`)
+}
+```
+
+**Option 2: Manual Resolution Validation**
+
+```typescript
+// Validate user has removed conflict markers
+async function validateManualResolution(
+  repository: Repository,
+  file: WorkingDirectoryFileChange
+): Promise<{ valid: boolean; remainingMarkers: number }> {
+
+  const fullPath = Path.join(repository.path, file.path)
+  const content = await fs.promises.readFile(fullPath, 'utf8')
+
+  // Check for remaining conflict markers
+  const startMarkers = (content.match(/^<{7} /gm) || []).length
+  const middleMarkers = (content.match(/^={7}$/gm) || []).length
+  const endMarkers = (content.match(/^>{7} /gm) || []).length
+
+  const hasMarkers = startMarkers > 0 || middleMarkers > 0 || endMarkers > 0
+
+  return {
+    valid: !hasMarkers,
+    remainingMarkers: Math.max(startMarkers, middleMarkers, endMarkers)
+  }
+}
+
+// Stage manually resolved file with validation
+async function stageManuallyResolvedFile(
+  repository: Repository,
+  file: WorkingDirectoryFileChange
+): Promise<void> {
+
+  // Check for markers
+  const validation = await validateManualResolution(repository, file)
+
+  if (!validation.valid) {
+    // Warn user
+    const proceed = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Conflict Markers Found',
+      message: `${file.path} still contains ${validation.remainingMarkers} conflict marker(s).`,
+      detail: 'Did you forget to remove them?',
+      buttons: ['Cancel', 'Stage Anyway'],
+      defaultId: 0
+    })
+
+    if (proceed.response === 0) {
+      throw new Error('User canceled staging due to conflict markers')
+    }
+  }
+
+  // Stage file
+  await git(
+    ['add', '--', file.path],
+    repository.path,
+    'stage-manual-resolution'
+  )
+
+  console.log(`[Git] Manually resolved file staged: ${file.path}`)
+}
+```
+
+**Option 3: External Merge Tool**
+
+```typescript
+// app/src/lib/git/merge-tool.ts
+async function openInMergeTool(
+  repository: Repository,
+  file: WorkingDirectoryFileChange
+): Promise<void> {
+
+  console.log(`[Git] Opening merge tool for ${file.path}`)
+
+  // Get configured merge tool
+  const mergeToolResult = await git(
+    ['config', 'merge.tool'],
+    repository.path,
+    'get-merge-tool',
+    { successExitCodes: new Set([0, 1]) }
+  )
+
+  const mergeTool = mergeToolResult.stdout.trim() || 'vimdiff'
+
+  console.log(`[Git] Using merge tool: ${mergeTool}`)
+
+  // Launch merge tool (interactive)
+  await git(
+    ['mergetool', '--tool=' + mergeTool, '--', file.path],
+    repository.path,
+    'run-merge-tool',
+    {
+      processCallback: (process) => {
+        // Merge tool runs interactively
+        // User sees 3-way diff:
+        //   Left: Ours (HEAD)
+        //   Middle: Base (common ancestor)
+        //   Right: Theirs (merging branch)
+        //   Bottom: Result
+      }
+    }
+  )
+
+  console.log(`[Git] Merge tool completed for ${file.path}`)
+
+  // File is automatically staged by mergetool
+  // Refresh repository to reflect changes
+}
+```
+
+#### 2.4 Conflict State Tracking
+
+```typescript
+// app/src/lib/app-state.ts
+interface IConflictState {
+  kind: 'merge' | 'rebase' | 'cherryPick'
+
+  // What branch we're on
+  currentBranch: string
+  currentTip: string
+
+  // What we're merging/rebasing with
+  targetBranch?: string  // merge/rebase target
+  commits?: ReadonlyArray<CommitOneLine>  // for cherryPick/rebase
+
+  // Conflicted files
+  conflictedFiles: ReadonlyArray<WorkingDirectoryFileChange>
+
+  // User's resolution choices
+  manualResolutions: Map<string, ManualConflictResolution>
+}
+
+// Check if all conflicts resolved
+function areAllConflictsResolved(state: IConflictState): boolean {
+  // All conflicted files must be either:
+  // - Staged (resolved), OR
+  // - Removed from working directory
+
+  return state.conflictedFiles.every(file => {
+    // Check if file is staged
+    return file.status.kind !== AppFileStatusKind.Conflicted
+  })
 }
 ```
 
