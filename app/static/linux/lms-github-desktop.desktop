@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=LMS GitHub Desktop
+Comment=LMS GitHub Desktop is a seamless way to contribute to projects on GitHub.
+GenericName=Git Client
+Exec=desktop %U
+Icon=lms-github-desktop
+Type=Application
+StartupNotify=true
+Categories=Development;RevisionControl;
+MimeType=x-scheme-handler/x-github-client;x-scheme-handler/github-mac;x-scheme-handler/x-github-desktop-auth;x-scheme-handler/x-github-desktop-dev-auth;
+Keywords=github;git;vcs;
