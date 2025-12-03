@@ -88,8 +88,29 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
         const result = await spawn('wsl', ['--version'], { timeout: 5000 })
         return result.exitCode === 0
       } else {
-        // Check if claude command exists using login shell to get full PATH
-        const result = await spawn('bash', ['-l', '-c', 'which claude'], {
+        // Check if claude command exists
+        // Try common locations directly first, then fall back to shell lookup
+        const commonPaths = [
+          `${process.env.HOME}/.local/share/pnpm/claude`,
+          `${process.env.HOME}/.local/bin/claude`,
+          '/usr/local/bin/claude',
+          '/usr/bin/claude',
+        ]
+
+        for (const path of commonPaths) {
+          try {
+            const result = await spawn('test', ['-x', path], { timeout: 1000 })
+            if (result.exitCode === 0) {
+              return true
+            }
+          } catch {
+            // Continue to next path
+          }
+        }
+
+        // Fall back to shell lookup using user's default shell
+        const shell = process.env.SHELL || '/bin/bash'
+        const result = await spawn(shell, ['-l', '-c', 'which claude'], {
           timeout: 5000,
         })
         return result.exitCode === 0
@@ -138,10 +159,31 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
           'claude --print --output-format json --model haiku',
         ]
       } else {
-        // On Linux/macOS, use bash -l -c to load login shell PATH
-        // This ensures we find claude even if it's in ~/.local/share/pnpm or similar
-        command = 'bash'
-        args = ['-l', '-c', 'claude --print --output-format json --model haiku']
+        // On Linux/macOS, try to find claude in common locations first
+        const commonPaths = [
+          `${process.env.HOME}/.local/share/pnpm/claude`,
+          `${process.env.HOME}/.local/bin/claude`,
+          '/usr/local/bin/claude',
+          '/usr/bin/claude',
+        ]
+
+        let claudePath = 'claude' // fallback
+        for (const path of commonPaths) {
+          try {
+            const testResult = await spawn('test', ['-x', path], {
+              timeout: 1000,
+            })
+            if (testResult.exitCode === 0) {
+              claudePath = path
+              break
+            }
+          } catch {
+            // Continue to next path
+          }
+        }
+
+        command = claudePath
+        args = ['--print', '--output-format', 'json', '--model', 'haiku']
       }
 
       console.log('[Claude CLI] Command:', command)
