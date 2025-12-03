@@ -97,6 +97,47 @@ export function getWindowsIdentifierName() {
   return 'LMSGitHubDesktop'
 }
 
+export function getLinuxIdentifierName() {
+  return 'lms-github-desktop'
+}
+
+export function getLinuxAppImageName() {
+  return `${getLinuxIdentifierName()}-${version}-${getDistArchitecture()}.AppImage`
+}
+
+export function getLinuxAppImagePath() {
+  return Path.join(getDistRoot(), getLinuxAppImageName())
+}
+
+export function getLinuxDebName() {
+  return `${getLinuxIdentifierName()}_${version}_${getDebArchitecture()}.deb`
+}
+
+export function getLinuxDebPath() {
+  return Path.join(getDistRoot(), getLinuxDebName())
+}
+
+export function getLinuxRpmName() {
+  const rpmArch = getDistArchitecture() === 'x64' ? 'x86_64' : 'aarch64'
+  return `${getLinuxIdentifierName()}-${version}-1.${rpmArch}.rpm`
+}
+
+export function getLinuxRpmPath() {
+  return Path.join(getDistRoot(), getLinuxRpmName())
+}
+
+export function getLinuxTarGzName() {
+  return `${getLinuxIdentifierName()}-${version}-${getDistArchitecture()}.tar.gz`
+}
+
+export function getLinuxTarGzPath() {
+  return Path.join(getDistRoot(), getLinuxTarGzName())
+}
+
+function getDebArchitecture(): string {
+  return getDistArchitecture() === 'x64' ? 'amd64' : 'arm64'
+}
+
 export function getBundleSizes() {
   const outPath = Path.join(projectRoot, 'out')
   return {

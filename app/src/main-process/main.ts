@@ -240,12 +240,17 @@ async function handleCommandLineArguments(argv: string[]) {
     boolean: ['protocol-launcher'],
   })
 
-  // Desktop registers it's protocol handler callback on Windows as
+  // On Windows, Desktop registers its protocol handler callback as
   // `[executable path] --protocol-launcher "%1"`. Note that extra command
   // line arguments might be added by Chromium
   // (https://electronjs.org/docs/api/app#event-second-instance).
+  //
+  // On Linux, URLs are passed directly as command line arguments when
+  // the app is launched via xdg-open or when a second instance is triggered.
+  const shouldCheckForUrl =
+    (__WIN32__ && args['protocol-launcher'] === true) || __LINUX__
 
-  if (__WIN32__ && args['protocol-launcher'] === true) {
+  if (shouldCheckForUrl) {
     // On Windows we'll end up getting called with something like
     // `--protocol-launcher --allow-file-access-from-files x-github-client://..`
     // which minimist naturally interprets as
@@ -271,12 +276,15 @@ async function handleCommandLineArguments(argv: string[]) {
 
     if (matchingUrl) {
       handleAppURL(matchingUrl)
-    } else {
+    } else if (__WIN32__) {
+      // Only log an error on Windows where --protocol-launcher is expected
       log.error(`Encountered --protocol-launcher without app url`)
     }
-    // If --protocol-launcher is present we always want to bail and not
+    // If we're handling a protocol URL we want to bail and not
     // risk a smuggled cli switch
-    return
+    if (matchingUrl) {
+      return
+    }
   }
 
   if (typeof args['cli-open'] === 'string') {
