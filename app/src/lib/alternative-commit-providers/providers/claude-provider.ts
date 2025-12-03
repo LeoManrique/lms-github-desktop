@@ -57,12 +57,13 @@ async function spawn(
 
     // Write stdin if provided
     if (options?.stdin && proc.stdin) {
+      let stdinError: Error | null = null
+
       proc.stdin.on('error', err => {
-        if (timeoutId) {
-          clearTimeout(timeoutId)
-        }
-        console.error('[Claude CLI] Stdin error:', err)
-        reject(err)
+        // Log stdin errors but don't reject immediately
+        // The process may still produce output on stdout even if stdin closes
+        console.warn('[Claude CLI] Stdin error (non-fatal):', err.message)
+        stdinError = err
       })
 
       try {
@@ -75,18 +76,17 @@ async function spawn(
           console.log('[Claude CLI] Write buffer full, waiting for drain...')
           proc.stdin.once('drain', () => {
             console.log('[Claude CLI] Buffer drained, ending stdin')
-            proc.stdin?.end()
+            if (proc.stdin && !proc.stdin.destroyed) {
+              proc.stdin.end()
+            }
           })
         } else {
           console.log('[Claude CLI] Write completed, ending stdin')
           proc.stdin.end()
         }
       } catch (err) {
-        if (timeoutId) {
-          clearTimeout(timeoutId)
-        }
         console.error('[Claude CLI] Error writing to stdin:', err)
-        reject(err)
+        // Don't reject on write error, process may still return results
       }
     } else {
       console.warn(
