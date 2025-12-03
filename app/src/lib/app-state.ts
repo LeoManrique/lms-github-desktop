@@ -382,6 +382,15 @@ export interface IAppState {
 
   readonly commitMessageGenerationButtonClicked: boolean
 
+  /** The Claude model to use for commit message generation */
+  readonly claudeModel: string
+
+  /** The Ollama model to use for commit message generation */
+  readonly ollamaModel: string
+
+  /** The Ollama server URL */
+  readonly ollamaServerUrl: string
+
   /** Whether the changes filter is shown */
   readonly showChangesFilter: boolean
 }

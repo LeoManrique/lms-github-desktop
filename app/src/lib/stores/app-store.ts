@@ -433,6 +433,13 @@ const shellKey = 'shell'
 
 const repositoryIndicatorsEnabledKey = 'enable-repository-indicators'
 
+const claudeModelKey = 'claude-model'
+const claudeModelDefault = 'haiku'
+const ollamaModelKey = 'ollama-model'
+const ollamaModelDefault = 'tavernari/git-commit-message:latest'
+const ollamaServerUrlKey = 'ollama-server-url'
+const ollamaServerUrlDefault = 'http://localhost:11434'
+
 // background fetching should occur hourly when Desktop is active, but this
 // lower interval ensures user interactions like switching repositories and
 // switching between apps does not result in excessive fetching in the app
@@ -627,6 +634,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private showChangesFilter: boolean = false
 
+  private claudeModel: string = claudeModelDefault
+  private ollamaModel: string = ollamaModelDefault
+  private ollamaServerUrl: string = ollamaServerUrlDefault
+
   public constructor(
     private readonly gitHubUserStore: GitHubUserStore,
     private readonly cloningRepositoriesStore: CloningRepositoriesStore,
@@ -728,10 +739,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const providerManager = getProviderManager()
 
     // Register Claude provider
-    providerManager.register(new ClaudeProvider())
+    providerManager.register(new ClaudeProvider({ model: this.claudeModel }))
 
     // Register Ollama provider
-    providerManager.register(new OllamaProvider())
+    providerManager.register(
+      new OllamaProvider({
+        model: this.ollamaModel,
+        serverUrl: this.ollamaServerUrl,
+      })
+    )
   }
 
   private initializeWindowState = async () => {
@@ -1143,6 +1159,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
+      claudeModel: this.claudeModel,
+      ollamaModel: this.ollamaModel,
+      ollamaServerUrl: this.ollamaServerUrl,
     }
   }
 
@@ -2386,6 +2405,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       showChangesFilterKey,
       showChangesFilterDefault
     )
+
+    this.claudeModel =
+      localStorage.getItem(claudeModelKey) ?? claudeModelDefault
+    this.ollamaModel =
+      localStorage.getItem(ollamaModelKey) ?? ollamaModelDefault
+    this.ollamaServerUrl =
+      localStorage.getItem(ollamaServerUrlKey) ?? ollamaServerUrlDefault
+
+    // Re-initialize providers with saved settings
+    this.initializeAlternativeProviders()
 
     this.emitUpdateNow()
 
@@ -3827,6 +3856,27 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   public _setNotificationsEnabled(notificationsEnabled: boolean) {
     this.notificationsStore.setNotificationsEnabled(notificationsEnabled)
+    this.emitUpdate()
+  }
+
+  public _setClaudeModel(model: string) {
+    localStorage.setItem(claudeModelKey, model)
+    this.claudeModel = model
+    this.initializeAlternativeProviders()
+    this.emitUpdate()
+  }
+
+  public _setOllamaModel(model: string) {
+    localStorage.setItem(ollamaModelKey, model)
+    this.ollamaModel = model
+    this.initializeAlternativeProviders()
+    this.emitUpdate()
+  }
+
+  public _setOllamaServerUrl(url: string) {
+    localStorage.setItem(ollamaServerUrlKey, url)
+    this.ollamaServerUrl = url
+    this.initializeAlternativeProviders()
     this.emitUpdate()
   }
 

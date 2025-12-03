@@ -44,6 +44,7 @@ async function spawn(
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
+      console.error('[Claude CLI] Process spawn error:', err)
       reject(err)
     })
 
@@ -56,8 +57,41 @@ async function spawn(
 
     // Write stdin if provided
     if (options?.stdin && proc.stdin) {
-      proc.stdin.write(options.stdin)
-      proc.stdin.end()
+      proc.stdin.on('error', err => {
+        // Log stdin errors but don't reject immediately
+        // The process may still produce output on stdout even if stdin closes
+        console.warn('[Claude CLI] Stdin error (non-fatal):', err.message)
+      })
+
+      try {
+        console.log(
+          `[Claude CLI] Writing ${options.stdin.length} bytes to stdin...`
+        )
+        const canContinue = proc.stdin.write(options.stdin)
+        if (!canContinue) {
+          // If write buffer is full, wait for drain before ending
+          console.log('[Claude CLI] Write buffer full, waiting for drain...')
+          proc.stdin.once('drain', () => {
+            console.log('[Claude CLI] Buffer drained, ending stdin')
+            if (proc.stdin && !proc.stdin.destroyed) {
+              proc.stdin.end()
+            }
+          })
+        } else {
+          console.log('[Claude CLI] Write completed, ending stdin')
+          proc.stdin.end()
+        }
+      } catch (err) {
+        console.error('[Claude CLI] Error writing to stdin:', err)
+        // Don't reject on write error, process may still return results
+      }
+    } else {
+      console.warn(
+        '[Claude CLI] No stdin or proc.stdin unavailable. stdin:',
+        !!options?.stdin,
+        'proc.stdin:',
+        !!proc.stdin
+      )
     }
   })
 }
@@ -73,10 +107,17 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
 
   private readonly MAX_DIFF_SIZE = 20 * 1024 * 1024 // 20MB
   private readonly TIMEOUT_MS = 120000 // 2 minutes
+  private readonly model: string
+  private wslAvailable: boolean | null = null
+
+  public constructor(config?: { model?: string }) {
+    super()
+    this.model = config?.model ?? 'haiku'
+  }
 
   /**
    * Check if Claude CLI is available.
-   * On Windows, checks if WSL is available.
+   * On Windows, checks if claude is available in WSL, then falls back to direct Windows execution.
    * On Unix, checks if claude command is in PATH.
    */
   async isAvailable(): Promise<boolean> {
@@ -84,17 +125,68 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       const isWindows = process.platform === 'win32'
 
       if (isWindows) {
-        // Check if WSL is available
-        const result = await spawn('wsl', ['--version'], { timeout: 5000 })
-        return result.exitCode === 0
+        // Check if Claude CLI is available in WSL and cache the result
+        if (this.wslAvailable === null) {
+          const result = await spawn('wsl', ['claude', '--version'], { timeout: 5000 })
+          this.wslAvailable = result.exitCode === 0
+          console.log('[Claude CLI] WSL claude availability check:', this.wslAvailable)
+        }
+
+        if (this.wslAvailable) {
+          return true
+        }
+
+        // Fallback: try to run claude directly on Windows
+        console.log('[Claude CLI] WSL not available, trying direct Windows execution')
+        const commonPaths = [
+          `${process.env.USERPROFILE}\\.local\\bin\\claude.exe`,
+          `${process.env.USERPROFILE}\\AppData\\Local\\pnpm\\claude.exe`,
+          'claude',
+        ]
+
+        for (const path of commonPaths) {
+          try {
+            const result = await spawn(path, ['--version'], { timeout: 1000 })
+            if (result.exitCode === 0) {
+              console.log('[Claude CLI] Found claude at:', path)
+              return true
+            }
+          } catch {
+            // Continue to next path
+          }
+        }
+
+        return false
       } else {
-        // Check if claude command exists using login shell to get full PATH
-        const result = await spawn('bash', ['-l', '-c', 'which claude'], {
+        // Check if claude command exists
+        // Try common locations directly first, then fall back to shell lookup
+        const commonPaths = [
+          `${process.env.HOME}/.local/share/pnpm/claude`,
+          `${process.env.HOME}/.local/bin/claude`,
+          '/usr/local/bin/claude',
+          '/usr/bin/claude',
+        ]
+
+        for (const path of commonPaths) {
+          try {
+            const result = await spawn('test', ['-x', path], { timeout: 1000 })
+            if (result.exitCode === 0) {
+              return true
+            }
+          } catch {
+            // Continue to next path
+          }
+        }
+
+        // Fall back to shell lookup using user's default shell
+        const shell = process.env.SHELL || '/bin/bash'
+        const result = await spawn(shell, ['-l', '-c', 'which claude'], {
           timeout: 5000,
         })
         return result.exitCode === 0
       }
     } catch (e) {
+      console.error('[Claude CLI] Error in isAvailable:', e)
       return false
     }
   }
@@ -122,26 +214,82 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
     console.log('[Claude CLI] Prompt size:', prompt.length, 'characters')
 
     try {
-      // On Windows, Claude CLI needs to run through WSL with an interactive shell
-      // The -i flag makes bash load .bashrc, which sets up NVM and adds Claude to PATH
       const isWindows = process.platform === 'win32'
 
       let command: string
       let args: string[]
 
       if (isWindows) {
-        command = 'wsl'
-        args = [
-          'bash',
-          '-i',
-          '-c',
-          'claude --print --output-format json --model haiku',
-        ]
+        // Ensure WSL claude availability is cached
+        if (this.wslAvailable === null) {
+          const result = await spawn('wsl', ['claude', '--version'], { timeout: 5000 })
+          this.wslAvailable = result.exitCode === 0
+        }
+
+        if (this.wslAvailable) {
+          // Use WSL: needs interactive shell to load .bashrc with NVM and Claude PATH setup
+          console.log('[Claude CLI] Using WSL for execution')
+          command = 'wsl'
+          args = [
+            'bash',
+            '-i',
+            '-c',
+            `claude --print --output-format json --model ${this.model.replace(/[^a-z0-9.-]/gi, '')}`,
+          ]
+        } else {
+          // Direct Windows execution without WSL
+          console.log('[Claude CLI] Using direct Windows execution (no WSL)')
+          const commonPaths = [
+            `${process.env.USERPROFILE}\\.local\\bin\\claude.exe`,
+            `${process.env.USERPROFILE}\\AppData\\Local\\pnpm\\claude.exe`,
+            'claude',
+          ]
+
+          let claudePath = 'claude' // fallback
+          for (const path of commonPaths) {
+            try {
+              const testResult = await spawn(path, ['--version'], {
+                timeout: 1000,
+              })
+              if (testResult.exitCode === 0) {
+                claudePath = path
+                console.log('[Claude CLI] Found claude at:', claudePath)
+                break
+              }
+            } catch {
+              // Continue to next path
+            }
+          }
+
+          command = claudePath
+          args = ['--print', '--output-format', 'json', '--model', this.model]
+        }
       } else {
-        // On Linux/macOS, use bash -l -c to load login shell PATH
-        // This ensures we find claude even if it's in ~/.local/share/pnpm or similar
-        command = 'bash'
-        args = ['-l', '-c', 'claude --print --output-format json --model haiku']
+        // On Linux/macOS, try to find claude in common locations first
+        const commonPaths = [
+          `${process.env.HOME}/.local/share/pnpm/claude`,
+          `${process.env.HOME}/.local/bin/claude`,
+          '/usr/local/bin/claude',
+          '/usr/bin/claude',
+        ]
+
+        let claudePath = 'claude' // fallback
+        for (const path of commonPaths) {
+          try {
+            const testResult = await spawn('test', ['-x', path], {
+              timeout: 1000,
+            })
+            if (testResult.exitCode === 0) {
+              claudePath = path
+              break
+            }
+          } catch {
+            // Continue to next path
+          }
+        }
+
+        command = claudePath
+        args = ['--print', '--output-format', 'json', '--model', this.model]
       }
 
       console.log('[Claude CLI] Command:', command)
@@ -170,8 +318,19 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
           '[Claude CLI] Command failed with exit code:',
           result.exitCode
         )
+        console.error('[Claude CLI] Full stdout:', result.stdout)
+        console.error('[Claude CLI] Full stderr:', result.stderr)
+        let errorMessage = result.stderr
+        if (!errorMessage) {
+          try {
+            const parsed = JSON.parse(result.stdout)
+            errorMessage = parsed.result || result.stdout
+          } catch {
+            errorMessage = result.stdout
+          }
+        }
         throw new ProviderError(
-          `Claude CLI exited with code ${result.exitCode}: ${result.stderr}`,
+          errorMessage || `Claude CLI exited with code ${result.exitCode}`,
           'CLI_ERROR',
           true
         )

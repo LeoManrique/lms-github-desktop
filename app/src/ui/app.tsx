@@ -1613,6 +1613,9 @@ export class App extends React.Component<IAppProps, IAppState> {
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
             showDiffCheckMarks={this.state.showDiffCheckMarks}
+            claudeModel={this.state.claudeModel}
+            ollamaModel={this.state.ollamaModel}
+            ollamaServerUrl={this.state.ollamaServerUrl}
           />
         )
       case PopupType.RepositorySettings: {

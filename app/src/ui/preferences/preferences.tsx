@@ -41,6 +41,7 @@ import {
 import { Prompts } from './prompts'
 import { Repository } from '../../models/repository'
 import { Notifications } from './notifications'
+import { AI } from './ai'
 import { Accessibility } from './accessibility'
 import {
   ICustomIntegration,
@@ -81,6 +82,9 @@ interface IPreferencesProps {
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
+  readonly claudeModel: string
+  readonly ollamaModel: string
+  readonly ollamaServerUrl: string
 }
 
 interface IPreferencesState {
@@ -134,6 +138,10 @@ interface IPreferencesState {
   readonly underlineLinks: boolean
 
   readonly showDiffCheckMarks: boolean
+
+  readonly claudeModel: string
+  readonly ollamaModel: string
+  readonly ollamaServerUrl: string
 }
 
 /**
@@ -192,6 +200,9 @@ export class Preferences extends React.Component<
       isLoadingGitConfig: true,
       underlineLinks: this.props.underlineLinks,
       showDiffCheckMarks: this.props.showDiffCheckMarks,
+      claudeModel: this.props.claudeModel,
+      ollamaModel: this.props.ollamaModel,
+      ollamaServerUrl: this.props.ollamaServerUrl,
     }
   }
 
@@ -313,6 +324,10 @@ export class Preferences extends React.Component<
               <Octicon className="icon" symbol={octicons.question} />
               Prompts
             </span>
+            <span id={this.getTabId(PreferencesTab.AI)}>
+              <Octicon className="icon" symbol={octicons.sparkleFill} />
+              AI
+            </span>
             <span id={this.getTabId(PreferencesTab.Advanced)}>
               <Octicon className="icon" symbol={octicons.gear} />
               Advanced
@@ -350,6 +365,9 @@ export class Preferences extends React.Component<
         break
       case PreferencesTab.Prompts:
         suffix = 'prompts'
+        break
+      case PreferencesTab.AI:
+        suffix = 'ai'
         break
       case PreferencesTab.Advanced:
         suffix = 'advanced'
@@ -518,6 +536,18 @@ export class Preferences extends React.Component<
         )
         break
       }
+      case PreferencesTab.AI:
+        View = (
+          <AI
+            claudeModel={this.state.claudeModel}
+            ollamaModel={this.state.ollamaModel}
+            ollamaServerUrl={this.state.ollamaServerUrl}
+            onClaudeModelChanged={this.onClaudeModelChanged}
+            onOllamaModelChanged={this.onOllamaModelChanged}
+            onOllamaServerUrlChanged={this.onOllamaServerUrlChanged}
+          />
+        )
+        break
       case PreferencesTab.Advanced: {
         View = (
           <Advanced
@@ -693,6 +723,18 @@ export class Preferences extends React.Component<
     this.setState({ showDiffCheckMarks })
   }
 
+  private onClaudeModelChanged = (claudeModel: string) => {
+    this.setState({ claudeModel })
+  }
+
+  private onOllamaModelChanged = (ollamaModel: string) => {
+    this.setState({ ollamaModel })
+  }
+
+  private onOllamaServerUrlChanged = (ollamaServerUrl: string) => {
+    this.setState({ ollamaServerUrl })
+  }
+
   private onSelectedTabSizeChanged = (tabSize: number) => {
     this.props.dispatcher.setSelectedTabSize(tabSize)
   }
@@ -842,6 +884,10 @@ export class Preferences extends React.Component<
     dispatcher.setUnderlineLinksSetting(this.state.underlineLinks)
 
     dispatcher.setDiffCheckMarksSetting(this.state.showDiffCheckMarks)
+
+    dispatcher.setClaudeModel(this.state.claudeModel)
+    dispatcher.setOllamaModel(this.state.ollamaModel)
+    dispatcher.setOllamaServerUrl(this.state.ollamaServerUrl)
 
     this.props.onDismissed()
   }

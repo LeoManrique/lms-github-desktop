@@ -11,10 +11,16 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
   readonly displayName = 'Ollama'
   readonly icon = ollama
 
-  private readonly OLLAMA_URL = 'http://localhost:11434'
-  private readonly MODEL_NAME = 'tavernari/git-commit-message:latest'
+  private readonly OLLAMA_URL: string
+  private readonly MODEL_NAME: string
   private readonly MAX_DIFF_SIZE = 50 * 1024 * 1024 // 50MB (local = no limit!)
   private readonly TIMEOUT_MS = 120000 // 2 minutes
+
+  public constructor(config?: { model?: string; serverUrl?: string }) {
+    super()
+    this.MODEL_NAME = config?.model ?? 'tavernari/git-commit-message:latest'
+    this.OLLAMA_URL = config?.serverUrl ?? 'http://localhost:11434'
+  }
 
   /**
    * Check if Ollama is running and has the commit message model.
@@ -25,12 +31,7 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
         signal: AbortSignal.timeout(5000), // 5 second timeout
       })
 
-      if (!response.ok) {
-        return false
-      }
-
-      const data = await response.json()
-      return data.models.some((m: any) => m.name.includes('git-commit-message'))
+      return response.ok
     } catch (e) {
       return false
     }

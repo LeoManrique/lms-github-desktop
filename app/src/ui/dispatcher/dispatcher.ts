@@ -2788,6 +2788,18 @@ export class Dispatcher {
     this.appStore._setNotificationsEnabled(notificationsEnabled)
   }
 
+  public setClaudeModel(model: string) {
+    this.appStore._setClaudeModel(model)
+  }
+
+  public setOllamaModel(model: string) {
+    this.appStore._setOllamaModel(model)
+  }
+
+  public setOllamaServerUrl(url: string) {
+    this.appStore._setOllamaServerUrl(url)
+  }
+
   private logHowToRevertCherryPick(
     targetBranchName: string,
     beforeSha: string | null
