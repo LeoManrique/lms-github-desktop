@@ -44,6 +44,7 @@ async function spawn(
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
+      console.error('[Claude CLI] Process spawn error:', err)
       reject(err)
     })
 
@@ -56,8 +57,44 @@ async function spawn(
 
     // Write stdin if provided
     if (options?.stdin && proc.stdin) {
-      proc.stdin.write(options.stdin)
-      proc.stdin.end()
+      proc.stdin.on('error', err => {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+        console.error('[Claude CLI] Stdin error:', err)
+        reject(err)
+      })
+
+      try {
+        console.log(
+          `[Claude CLI] Writing ${options.stdin.length} bytes to stdin...`
+        )
+        const canContinue = proc.stdin.write(options.stdin)
+        if (!canContinue) {
+          // If write buffer is full, wait for drain before ending
+          console.log('[Claude CLI] Write buffer full, waiting for drain...')
+          proc.stdin.once('drain', () => {
+            console.log('[Claude CLI] Buffer drained, ending stdin')
+            proc.stdin?.end()
+          })
+        } else {
+          console.log('[Claude CLI] Write completed, ending stdin')
+          proc.stdin.end()
+        }
+      } catch (err) {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+        console.error('[Claude CLI] Error writing to stdin:', err)
+        reject(err)
+      }
+    } else {
+      console.warn(
+        '[Claude CLI] No stdin or proc.stdin unavailable. stdin:',
+        !!options?.stdin,
+        'proc.stdin:',
+        !!proc.stdin
+      )
     }
   })
 }
