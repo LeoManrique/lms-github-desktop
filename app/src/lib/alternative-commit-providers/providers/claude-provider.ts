@@ -88,8 +88,10 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
         const result = await spawn('wsl', ['--version'], { timeout: 5000 })
         return result.exitCode === 0
       } else {
-        // Check if claude command exists
-        const result = await spawn('which', ['claude'], { timeout: 5000 })
+        // Check if claude command exists using login shell to get full PATH
+        const result = await spawn('bash', ['-l', '-c', 'which claude'], {
+          timeout: 5000,
+        })
         return result.exitCode === 0
       }
     } catch (e) {
@@ -136,8 +138,10 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
           'claude --print --output-format json --model haiku',
         ]
       } else {
-        command = 'claude'
-        args = ['--print', '--output-format', 'json', '--model', 'haiku']
+        // On Linux/macOS, use bash -l -c to load login shell PATH
+        // This ensures we find claude even if it's in ~/.local/share/pnpm or similar
+        command = 'bash'
+        args = ['-l', '-c', 'claude --print --output-format json --model haiku']
       }
 
       console.log('[Claude CLI] Command:', command)
