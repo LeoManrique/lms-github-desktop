@@ -246,6 +246,8 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
           '[Claude CLI] Command failed with exit code:',
           result.exitCode
         )
+        console.error('[Claude CLI] Full stdout:', result.stdout)
+        console.error('[Claude CLI] Full stderr:', result.stderr)
         throw new ProviderError(
           `Claude CLI exited with code ${result.exitCode}: ${result.stderr}`,
           'CLI_ERROR',
