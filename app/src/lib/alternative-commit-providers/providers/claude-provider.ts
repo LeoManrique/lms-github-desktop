@@ -57,13 +57,10 @@ async function spawn(
 
     // Write stdin if provided
     if (options?.stdin && proc.stdin) {
-      let stdinError: Error | null = null
-
       proc.stdin.on('error', err => {
         // Log stdin errors but don't reject immediately
         // The process may still produce output on stdout even if stdin closes
         console.warn('[Claude CLI] Stdin error (non-fatal):', err.message)
-        stdinError = err
       })
 
       try {
