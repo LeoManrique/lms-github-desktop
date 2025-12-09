@@ -111,7 +111,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
 
   /**
    * Check if Claude CLI is available.
-   * On Windows, checks if WSL is available.
+   * On Windows, checks if claude is available in WSL, then falls back to direct Windows execution.
    * On Unix, checks if claude command is in PATH.
    */
   async isAvailable(): Promise<boolean> {
@@ -119,11 +119,11 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       const isWindows = process.platform === 'win32'
 
       if (isWindows) {
-        // Check if WSL is available and cache the result
+        // Check if Claude CLI is available in WSL and cache the result
         if (this.wslAvailable === null) {
-          const result = await spawn('wsl', ['--version'], { timeout: 5000 })
+          const result = await spawn('wsl', ['claude', '--version'], { timeout: 5000 })
           this.wslAvailable = result.exitCode === 0
-          console.log('[Claude CLI] WSL availability check:', this.wslAvailable)
+          console.log('[Claude CLI] WSL claude availability check:', this.wslAvailable)
         }
 
         if (this.wslAvailable) {
@@ -214,9 +214,9 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       let args: string[]
 
       if (isWindows) {
-        // Ensure WSL availability is cached
+        // Ensure WSL claude availability is cached
         if (this.wslAvailable === null) {
-          const result = await spawn('wsl', ['--version'], { timeout: 5000 })
+          const result = await spawn('wsl', ['claude', '--version'], { timeout: 5000 })
           this.wslAvailable = result.exitCode === 0
         }
 
