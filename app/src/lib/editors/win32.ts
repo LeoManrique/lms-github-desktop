@@ -507,6 +507,18 @@ const editors: WindowsExternalEditor[] = [
     displayNamePrefixes: ['Zed'],
     publishers: ['Zed Industries'],
   },
+  {
+    name: 'Antigravity',
+    registryKeys: [
+      // 64-bit version of Antigravity (user)
+      CurrentUserUninstallKey('{AA73B3E3-C6C8-45C8-B1DC-4AE56C751432}_is1'),
+      // ARM64 version of Antigravity (user)
+      CurrentUserUninstallKey('{057BEF68-E891-4AD8-871C-3C9893C9F8A7}_is1'),
+    ],
+    installLocationRegistryKey: 'DisplayIcon',
+    displayNamePrefixes: ['Antigravity'],
+    publishers: ['Google'],
+  },
 ]
 
 function getKeyOrEmpty(
