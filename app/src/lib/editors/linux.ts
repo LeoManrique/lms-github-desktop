@@ -211,6 +211,13 @@ const editors: ILinuxExternalEditor[] = [
       '/usr/bin/zed',
     ],
   },
+  {
+    name: 'Antigravity',
+    paths: [
+      '/usr/bin/antigravity',
+      '/opt/Antigravity/antigravity'
+    ],
+  },
 ]
 
 async function getAvailablePath(paths: string[]): Promise<string | null> {
