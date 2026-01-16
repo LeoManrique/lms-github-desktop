@@ -918,21 +918,17 @@ export class ChangesList extends React.Component<
 
   private onGenerateCommitMessage = (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean
+    _mustOverrideExistingMessage: boolean
   ) => {
     this.props.dispatcher.incrementMetric(
       'generateCommitMessageButtonClickCount'
     )
 
-    return mustOverrideExistingMessage
-      ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
-          this.props.repository,
-          filesSelected
-        )
-      : this.props.dispatcher.generateCommitMessage(
-          this.props.repository,
-          filesSelected
-        )
+    // Always generate directly, bypassing override confirmation
+    return this.props.dispatcher.generateCommitMessage(
+      this.props.repository,
+      filesSelected
+    )
   }
 
   /**
@@ -940,20 +936,15 @@ export class ChangesList extends React.Component<
    */
   private onGenerateCommitMessageWithAlternativeProvider = (
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>,
-    mustOverrideExistingMessage: boolean,
+    _mustOverrideExistingMessage: boolean,
     providerId: 'claude' | 'ollama'
   ) => {
-    return mustOverrideExistingMessage
-      ? this.props.dispatcher.promptOverrideWithGeneratedCommitMessage(
-          this.props.repository,
-          filesSelected,
-          providerId
-        )
-      : this.props.dispatcher.generateCommitMessageWithAlternativeProvider(
-          this.props.repository,
-          filesSelected,
-          providerId
-        )
+    // Always generate directly, bypassing override confirmation
+    return this.props.dispatcher.generateCommitMessageWithAlternativeProvider(
+      this.props.repository,
+      filesSelected,
+      providerId
+    )
   }
 
   private onShowPopup = (p: Popup) => this.props.dispatcher.showPopup(p)
