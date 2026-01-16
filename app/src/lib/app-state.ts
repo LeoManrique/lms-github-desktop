@@ -194,6 +194,9 @@ export interface IAppState {
   /** The width of the resizable push/pull button in the toolbar. */
   readonly pushPullButtonWidth: IConstrainedValue
 
+  /** The height of the commit section in the changes sidebar. */
+  readonly commitSectionHeight: IConstrainedValue
+
   /**
    * Used to highlight access keys throughout the app when the
    * Alt key is pressed. Only applicable on non-macOS platforms.

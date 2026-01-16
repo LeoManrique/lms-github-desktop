@@ -3454,6 +3454,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           shouldShowGenerateCommitMessageCallOut={
             !this.state.commitMessageGenerationButtonClicked
           }
+          commitSectionHeight={state.commitSectionHeight}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

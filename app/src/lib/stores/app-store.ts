@@ -383,6 +383,9 @@ const branchDropdownWidthConfigKey: string = 'branch-dropdown-width'
 const defaultPushPullButtonWidth: number = 230
 const pushPullButtonWidthConfigKey: string = 'push-pull-button-width'
 
+const defaultCommitSectionHeight: number = 220
+const commitSectionHeightConfigKey: string = 'commit-section-height'
+
 const askToMoveToApplicationsFolderDefault: boolean = true
 const confirmRepoRemovalDefault: boolean = true
 const showCommitLengthWarningDefault: boolean = false
@@ -532,6 +535,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private pullRequestFileListWidth = constrain(defaultPullRequestFileListWidth)
   private branchDropdownWidth = constrain(defaultBranchDropdownWidth)
   private pushPullButtonWidth = constrain(defaultPushPullButtonWidth)
+  private commitSectionHeight = constrain(defaultCommitSectionHeight)
 
   private windowState: WindowState | null = null
   private windowZoomFactor: number = 1
@@ -1097,6 +1101,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitSummaryWidth: this.commitSummaryWidth,
       stashedFilesWidth: this.stashedFilesWidth,
       pullRequestFilesListWidth: this.pullRequestFileListWidth,
+      commitSectionHeight: this.commitSectionHeight,
       appMenuState: this.appMenu ? this.appMenu.openMenus : [],
       highlightAccessKeys: this.highlightAccessKeys,
       isUpdateAvailableBannerVisible: this.isUpdateAvailableBannerVisible,
@@ -2236,6 +2241,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
     this.pushPullButtonWidth = constrain(
       getNumber(pushPullButtonWidthConfigKey, defaultPushPullButtonWidth)
+    )
+    this.commitSectionHeight = constrain(
+      getNumber(commitSectionHeightConfigKey, defaultCommitSectionHeight)
     )
 
     this.updateResizableConstraints()
@@ -5458,6 +5466,25 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.sidebarWidth = { ...this.sidebarWidth, value: defaultSidebarWidth }
     localStorage.removeItem(sidebarWidthConfigKey)
     this.updateResizableConstraints()
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
+  public _setCommitSectionHeight(height: number): Promise<void> {
+    this.commitSectionHeight = { ...this.commitSectionHeight, value: height }
+    setNumber(commitSectionHeightConfigKey, height)
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
+  public _resetCommitSectionHeight(): Promise<void> {
+    this.commitSectionHeight = {
+      ...this.commitSectionHeight,
+      value: defaultCommitSectionHeight,
+    }
+    localStorage.removeItem(commitSectionHeightConfigKey)
     this.emitUpdate()
 
     return Promise.resolve()
