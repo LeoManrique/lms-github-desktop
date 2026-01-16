@@ -13,6 +13,12 @@ const commonConfig: webpack.Configuration = {
   optimization: {
     emitOnErrors: false,
   },
+  cache: {
+    type: 'filesystem',
+    buildDependencies: {
+      config: [__filename],
+    },
+  },
   externals: externals,
   output: {
     filename: '[name].js',
@@ -25,11 +31,29 @@ const commonConfig: webpack.Configuration = {
   module: {
     rules: [
       {
-        test: /\.tsx?$/,
+        test: /\.tsx$/,
         include: path.resolve(__dirname, 'src'),
         use: [
           {
-            loader: 'ts-loader',
+            loader: 'esbuild-loader',
+            options: {
+              loader: 'tsx',
+              target: 'es2022',
+            },
+          },
+        ],
+        exclude: /node_modules/,
+      },
+      {
+        test: /\.ts$/,
+        include: path.resolve(__dirname, 'src'),
+        use: [
+          {
+            loader: 'esbuild-loader',
+            options: {
+              loader: 'ts',
+              target: 'es2022',
+            },
           },
         ],
         exclude: /node_modules/,
@@ -187,9 +211,10 @@ highlighter.module!.rules = [
     include: path.resolve(__dirname, 'src/highlighter'),
     use: [
       {
-        loader: 'ts-loader',
+        loader: 'esbuild-loader',
         options: {
-          configFile: path.resolve(__dirname, 'src/highlighter/tsconfig.json'),
+          loader: 'ts',
+          target: 'es2021',
         },
       },
     ],
