@@ -5,16 +5,22 @@ import merge from 'webpack-merge'
 import MiniCssExtractPlugin from 'mini-css-extract-plugin'
 import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer'
 
-const config: webpack.Configuration = {
+const configWithSourceMaps: webpack.Configuration = {
   mode: 'production',
   devtool: 'source-map',
 }
 
-const mainConfig = merge({}, common.main, config)
-const cliConfig = merge({}, common.cli, config)
-const highlighterConfig = merge({}, common.highlighter, config)
+const configWithoutSourceMaps: webpack.Configuration = {
+  mode: 'production',
+  devtool: false,
+}
 
-const rendererConfig = merge({}, common.renderer, config, {
+// Main, CLI, and highlighter don't need source maps in production
+const mainConfig = merge({}, common.main, configWithoutSourceMaps)
+const cliConfig = merge({}, common.cli, configWithoutSourceMaps)
+const highlighterConfig = merge({}, common.highlighter, configWithoutSourceMaps)
+
+const rendererConfig = merge({}, common.renderer, configWithSourceMaps, {
   module: {
     rules: [
       // This will cause the compiled CSS to be output to a
@@ -29,20 +35,20 @@ const rendererConfig = merge({}, common.renderer, config, {
   plugins: [
     // Necessary to be able to use MiniCssExtractPlugin as a loader.
     new MiniCssExtractPlugin({ filename: 'renderer.css' }),
-    new BundleAnalyzerPlugin({
-      // this generates the static HTML file to view afterwards, rather
-      // than disrupting the user
-      analyzerMode: 'static',
-      openAnalyzer: false,
-      // we can't emit this directly to the dist directory because the
-      // build script immediately blows away dist after webpack is done
-      // compiling the source into bundles
-      reportFilename: 'renderer.report.html',
-    }),
+    // Only run bundle analyzer when ANALYZE=true
+    ...(process.env.ANALYZE === 'true'
+      ? [
+          new BundleAnalyzerPlugin({
+            analyzerMode: 'static',
+            openAnalyzer: false,
+            reportFilename: 'renderer.report.html',
+          }),
+        ]
+      : []),
   ],
 })
 
-const crashConfig = merge({}, common.crash, config, {
+const crashConfig = merge({}, common.crash, configWithSourceMaps, {
   module: {
     rules: [
       // This will cause the compiled CSS to be output to a
