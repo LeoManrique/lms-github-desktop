@@ -59,6 +59,8 @@ import { RepoRulesInfo } from '../../models/repo-rules'
 import { IAheadBehind } from '../../models/branch'
 import { StashDiffViewerId } from '../stashing'
 import { enableFilteredChangesList } from '../../lib/feature-flag'
+import { VerticalResizable } from '../resizable'
+import { IConstrainedValue } from '../../lib/app-state'
 
 const RowHeight = 29
 const StashIcon: OcticonSymbolVariant = {
@@ -230,6 +232,15 @@ interface IChangesListProps {
   readonly showCommitLengthWarning: boolean
 
   readonly accounts: ReadonlyArray<Account>
+
+  /** The height of the commit section. */
+  readonly commitSectionHeight: IConstrainedValue
+
+  /** Called when the commit section is resized by the user. */
+  readonly onCommitSectionResize: (height: number) => void
+
+  /** Called when the commit section height is reset to default. */
+  readonly onCommitSectionReset: () => void
 }
 
 interface IChangesState {
@@ -1099,8 +1110,18 @@ export class ChangesList extends React.Component<
             ariaLabel={filesDescription}
           />
         </div>
-        {this.renderStashedChanges()}
-        {this.renderCommitMessageForm()}
+        <VerticalResizable
+          id="commit-section-resizable"
+          height={this.props.commitSectionHeight.value}
+          minimumHeight={this.props.commitSectionHeight.min}
+          maximumHeight={this.props.commitSectionHeight.max}
+          onResize={this.props.onCommitSectionResize}
+          onReset={this.props.onCommitSectionReset}
+          description="Commit section"
+        >
+          {this.renderStashedChanges()}
+          {this.renderCommitMessageForm()}
+        </VerticalResizable>
       </>
     )
   }

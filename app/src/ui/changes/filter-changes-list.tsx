@@ -43,6 +43,7 @@ import {
   RebaseConflictState,
   ConflictState,
   Foldout,
+  IConstrainedValue,
 } from '../../lib/app-state'
 import { ContinueRebase } from './continue-rebase'
 import { Octicon, OcticonSymbolVariant } from '../octicons'
@@ -73,6 +74,7 @@ import {
   applyFilters,
 } from './filter-changes-logic'
 import { ChangesListFilterOptions } from './changes-list-filter-options'
+import { VerticalResizable } from '../resizable'
 
 export interface IChangesListItem extends IFilterListItem {
   readonly id: string
@@ -219,6 +221,15 @@ interface IFilterChangesListProps {
 
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
+
+  /** The height of the commit section. */
+  readonly commitSectionHeight: IConstrainedValue
+
+  /** Called when the commit section is resized by the user. */
+  readonly onCommitSectionResize: (height: number) => void
+
+  /** Called when the commit section height is reset to default. */
+  readonly onCommitSectionReset: () => void
 }
 
 interface IFilterChangesListState {
@@ -1366,9 +1377,19 @@ export class FilterChangesList extends React.Component<
             )}
           />
         </div>
-        {this.renderStashedChanges()}
-        {this.renderHiddenChangesWarning()}
-        {this.renderCommitMessageForm()}
+        <VerticalResizable
+          id="commit-section-resizable"
+          height={this.props.commitSectionHeight.value}
+          minimumHeight={this.props.commitSectionHeight.min}
+          maximumHeight={this.props.commitSectionHeight.max}
+          onResize={this.props.onCommitSectionResize}
+          onReset={this.props.onCommitSectionReset}
+          description="Commit section"
+        >
+          {this.renderStashedChanges()}
+          {this.renderHiddenChangesWarning()}
+          {this.renderCommitMessageForm()}
+        </VerticalResizable>
       </>
     )
   }

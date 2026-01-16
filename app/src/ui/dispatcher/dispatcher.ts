@@ -1034,6 +1034,21 @@ export class Dispatcher {
   }
 
   /**
+   * Set the height of the commit section in the changes sidebar.
+   */
+  public setCommitSectionHeight(height: number): Promise<void> {
+    return this.appStore._setCommitSectionHeight(height)
+  }
+
+  /**
+   * Reset the height of the commit section in the changes sidebar
+   * to its default value.
+   */
+  public resetCommitSectionHeight(): Promise<void> {
+    return this.appStore._resetCommitSectionHeight()
+  }
+
+  /**
    * Set the width of the commit summary column in the
    * history view to the given value.
    */

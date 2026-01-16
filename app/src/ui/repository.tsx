@@ -113,6 +113,9 @@ interface IRepositoryViewProps {
 
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
+
+  /** The height of the commit section in the changes sidebar. */
+  readonly commitSectionHeight: IConstrainedValue
 }
 
 interface IRepositoryViewState {
@@ -275,6 +278,9 @@ export class RepositoryView extends React.Component<
         commitSpellcheckEnabled={this.props.commitSpellcheckEnabled}
         showCommitLengthWarning={this.props.showCommitLengthWarning}
         showChangesFilter={this.props.showChangesFilter}
+        commitSectionHeight={this.props.commitSectionHeight}
+        onCommitSectionResize={this.handleCommitSectionResize}
+        onCommitSectionReset={this.handleCommitSectionHeightReset}
       />
     )
   }
@@ -352,6 +358,14 @@ export class RepositoryView extends React.Component<
 
   private handleSidebarResize = (width: number) => {
     this.props.dispatcher.setSidebarWidth(width)
+  }
+
+  private handleCommitSectionHeightReset = () => {
+    this.props.dispatcher.resetCommitSectionHeight()
+  }
+
+  private handleCommitSectionResize = (height: number) => {
+    this.props.dispatcher.setCommitSectionHeight(height)
   }
 
   private renderSidebar(): JSX.Element {

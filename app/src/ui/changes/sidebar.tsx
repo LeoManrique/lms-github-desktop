@@ -8,6 +8,7 @@ import {
   RebaseConflictState,
   isRebaseConflictState,
   ChangesSelectionKind,
+  IConstrainedValue,
 } from '../../lib/app-state'
 import { Repository } from '../../models/repository'
 import { Dispatcher } from '../dispatcher'
@@ -93,6 +94,15 @@ interface IChangesSidebarProps {
 
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
+
+  /** The height of the commit section. */
+  readonly commitSectionHeight: IConstrainedValue
+
+  /** Called when the commit section is resized by the user. */
+  readonly onCommitSectionResize: (height: number) => void
+
+  /** Called when the commit section height is reset to default. */
+  readonly onCommitSectionReset: () => void
 }
 
 export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
@@ -461,6 +471,9 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           accounts={this.props.accounts}
           fileListFilter={this.props.changes.fileListFilter}
           showChangesFilter={this.props.showChangesFilter}
+          commitSectionHeight={this.props.commitSectionHeight}
+          onCommitSectionResize={this.props.onCommitSectionResize}
+          onCommitSectionReset={this.props.onCommitSectionReset}
         />
         {this.renderUndoCommit(rebaseConflictState)}
       </div>
