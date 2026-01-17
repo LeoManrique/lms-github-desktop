@@ -970,7 +970,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 5px;
+  padding: 10px 5px 5px 5px;
   background: var(--background-color);
   border-top: 1px solid var(--box-border-color);
 
@@ -980,7 +980,7 @@
     overflow: hidden;
     background: var(--background-color);
 
-    // xterm.js internal elements - match background
+    // xterm.js internal elements
     .xterm,
     .xterm-screen,
     .xterm-viewport,
@@ -990,6 +990,11 @@
 
     .xterm {
       height: 100%;
+    }
+
+    // Default text color for terminal - xterm's inline styles override for colored text
+    .xterm-rows {
+      color: var(--text-color);
     }
 
     // Error state
