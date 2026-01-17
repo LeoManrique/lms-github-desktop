@@ -51,6 +51,7 @@ import {
 import { initializeDesktopNotifications } from './notifications'
 import parseCommandLineArgs from 'minimist'
 import { CLIAction } from '../lib/cli-action'
+import { terminalManager } from './terminal-manager'
 
 app.setAppLogsPath()
 enableSourceMaps()
@@ -129,6 +130,14 @@ app.on('window-all-closed', () => {
   //
   // If we don't subscribe to this and change the default behavior we break
   // the crash process window which is shown after the main window is closed.
+})
+
+app.on('will-quit', () => {
+  // Mark as quitting to prevent IPC messages to destroyed windows
+  terminalManager.setQuitting()
+  // Clean up terminal processes before quitting
+  // This is especially important on macOS where window.onClosed may not fire
+  terminalManager.killAll()
 })
 
 process.on('uncaughtException', (error: Error) => {
@@ -725,6 +734,34 @@ app.on('ready', () => {
   ipcMain.handle('request-notifications-permission', async () =>
     requestNotificationsPermission()
   )
+
+  // Terminal IPC handlers
+  ipcMain.handle(
+    'terminal-get-or-spawn',
+    async (_, cwd: string, shellPath: string, shellArgs?: ReadonlyArray<string>) => {
+      return terminalManager.getOrSpawn(cwd, shellPath, shellArgs)
+    }
+  )
+
+  ipcMain.on('terminal-detach', (_, cwd: string) => {
+    terminalManager.detach(cwd)
+  })
+
+  ipcMain.handle('terminal-get-scrollback', async (_, cwd: string) => {
+    return terminalManager.getScrollback(cwd)
+  })
+
+  ipcMain.on('terminal-input', (_, cwd: string, data: string) => {
+    terminalManager.write(cwd, data)
+  })
+
+  ipcMain.on('terminal-resize', (_, cwd: string, cols: number, rows: number) => {
+    terminalManager.resize(cwd, cols, rows)
+  })
+
+  ipcMain.handle('terminal-kill', async (_, cwd: string) => {
+    terminalManager.kill(cwd)
+  })
 })
 
 app.on('activate', () => {
@@ -784,11 +821,18 @@ function createWindow() {
   }
 
   window.onClosed(() => {
+    // Mark as quitting to prevent IPC messages to destroyed window
+    terminalManager.setQuitting()
+    // Kill all terminal processes when window closes
+    terminalManager.killAll()
     mainWindow = null
     if (!__DARWIN__ && !preventQuit) {
       app.quit()
     }
   })
+
+  // Set up terminal manager with the browser window
+  terminalManager.setWindow(window.getBrowserWindow())
 
   window.onDidLoad(() => {
     window.show()

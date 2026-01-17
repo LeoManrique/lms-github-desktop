@@ -8,8 +8,11 @@ import { NoChanges } from './changes/no-changes'
 import { MultipleSelection } from './changes/multiple-selection'
 import { FilesChangedBadge } from './changes/files-changed-badge'
 import { SelectedCommits, CompareSidebar } from './history'
-import { Resizable } from './resizable'
+import { Resizable, VerticalResizable } from './resizable'
 import { TabBar } from './tab-bar'
+import { Terminal, TerminalHeader } from './terminal'
+import { Shell } from '../lib/shells'
+import { ICustomIntegration } from '../lib/custom-integration'
 import {
   IRepositoryState,
   RepositorySectionTab,
@@ -116,6 +119,21 @@ interface IRepositoryViewProps {
 
   /** The height of the commit section in the changes sidebar. */
   readonly commitSectionHeight: IConstrainedValue
+
+  /** The height of the terminal section below the diff view. */
+  readonly terminalSectionHeight: IConstrainedValue
+
+  /** Whether the terminal section is minimized/collapsed. */
+  readonly terminalMinimized: boolean
+
+  /** The user's selected shell preference */
+  readonly selectedShell: Shell
+
+  /** Whether to use a custom shell instead of the selected one */
+  readonly useCustomShell: boolean
+
+  /** The custom shell configuration, if useCustomShell is true */
+  readonly customShell: ICustomIntegration | null
 }
 
 interface IRepositoryViewState {
@@ -141,6 +159,7 @@ export class RepositoryView extends React.Component<
 
   private readonly changesSidebarRef = React.createRef<ChangesSidebar>()
   private readonly compareSidebarRef = React.createRef<CompareSidebar>()
+  private readonly terminalRef = React.createRef<Terminal>()
 
   private focusHistoryNeeded: boolean = false
   private focusChangesNeeded: boolean = false
@@ -366,6 +385,14 @@ export class RepositoryView extends React.Component<
 
   private handleCommitSectionResize = (height: number) => {
     this.props.dispatcher.setCommitSectionHeight(height)
+  }
+
+  private handleTerminalSectionHeightReset = () => {
+    this.props.dispatcher.resetTerminalSectionHeight()
+  }
+
+  private handleTerminalSectionResize = (height: number) => {
+    this.props.dispatcher.setTerminalSectionHeight(height)
   }
 
   private renderSidebar(): JSX.Element {
@@ -595,10 +622,85 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.changeImageDiffType(imageDiffType)
   }
 
+  private onTerminalCommandComplete = () => {
+    // Refresh repository state without stealing focus
+    this.props.dispatcher.refreshRepository(this.props.repository)
+  }
+
+  private onTerminalNewSession = async () => {
+    await this.terminalRef.current?.newSession()
+    // Expand if minimized
+    if (this.props.terminalMinimized) {
+      this.props.dispatcher.setTerminalMinimized(false)
+    }
+  }
+
+  private onTerminalToggleMinimize = () => {
+    this.props.dispatcher.setTerminalMinimized(!this.props.terminalMinimized)
+  }
+
+  private onTerminalKillSession = async () => {
+    await this.terminalRef.current?.killSession()
+    // Collapse the terminal
+    if (!this.props.terminalMinimized) {
+      this.props.dispatcher.setTerminalMinimized(true)
+    }
+  }
+
+  private renderTerminalSection(): JSX.Element {
+    const { terminalMinimized } = this.props
+    const hasSession = this.terminalRef.current?.hasSession() ?? false
+    const terminalSectionClass = terminalMinimized
+      ? 'terminal-section collapsed'
+      : 'terminal-section'
+
+    return (
+      <VerticalResizable
+        id="terminal-section-resizable"
+        height={this.props.terminalSectionHeight.value}
+        minimumHeight={this.props.terminalSectionHeight.min}
+        maximumHeight={
+          this.props.terminalSectionHeight.max === Infinity
+            ? undefined
+            : this.props.terminalSectionHeight.max
+        }
+        onResize={this.handleTerminalSectionResize}
+        onReset={this.handleTerminalSectionHeightReset}
+        description="Terminal section"
+      >
+        <div className={terminalSectionClass}>
+          <TerminalHeader
+            isMinimized={terminalMinimized}
+            hasSession={hasSession}
+            onNewSession={this.onTerminalNewSession}
+            onToggleMinimize={this.onTerminalToggleMinimize}
+            onKillSession={this.onTerminalKillSession}
+          />
+          <Terminal
+            ref={this.terminalRef}
+            cwd={this.props.repository.path}
+            onCommandComplete={this.onTerminalCommandComplete}
+            selectedShell={this.props.selectedShell}
+            useCustomShell={this.props.useCustomShell}
+            customShell={this.props.customShell}
+          />
+        </div>
+      </VerticalResizable>
+    )
+  }
+
   private renderContent(): JSX.Element | null {
     const selectedSection = this.props.state.selectedSection
     if (selectedSection === RepositorySectionTab.Changes) {
-      return this.renderContentForChanges()
+      const changesContent = this.renderContentForChanges()
+      return (
+        <div className="changes-content-container">
+          <div className="changes-content-main">
+            {changesContent}
+          </div>
+          {this.renderTerminalSection()}
+        </div>
+      )
     } else if (selectedSection === RepositorySectionTab.History) {
       return this.renderContentForHistory()
     } else {

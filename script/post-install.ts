@@ -38,6 +38,26 @@ findYarnVersion(path => {
     process.exit(result.status || 1)
   }
 
+  // Build vendor packages that have TypeScript source
+  const vendorPackages = [
+    'app/node_modules/desktop-notifications',
+    'app/node_modules/windows-argv-parser',
+  ]
+
+  for (const pkg of vendorPackages) {
+    const pkgPath = Path.join(root, pkg)
+    const tscPath = Path.join(root, 'node_modules', '.bin', 'tsc')
+    result = spawnSync(tscPath, [], {
+      cwd: pkgPath,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    })
+    if (result.status !== 0) {
+      console.error(`Failed to build ${pkg}`)
+      process.exit(result.status || 1)
+    }
+  }
+
   result = spawnSync(
     'git',
     ['submodule', 'update', '--recursive', '--init'],

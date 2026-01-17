@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "description": "Parse a command line string into an array of arguments, using Windows rules.",
   "license": "MIT",
-  "main": "build/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "install": "node-gyp rebuild && tsc"
+    "install": "node install.js"
   },
   "dependencies": {
     "node-addon-api": "^7.0.0"

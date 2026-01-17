@@ -1,10 +1,10 @@
-import webpack from 'webpack'
+import { rspack } from '@rspack/core'
 import DevMiddleware from 'webpack-dev-middleware'
 import HotMiddleware from 'webpack-hot-middleware'
 
 import { forceUnwrap as u } from '../app/src/lib/fatal-error'
 
-import configs from '../app/webpack.development'
+import configs from '../app/rspack.development'
 
 import { run } from './run'
 import { createServer } from 'http'
@@ -40,18 +40,19 @@ if (process.env.NODE_ENV === 'production') {
   startApp()
 } else {
   const rendererConfig = configs[1]
-  const compiler = webpack(rendererConfig)
+  const compiler = rspack(rendererConfig)
   const port = getPortOrDefault()
   const message = 'Could not find public path from configuration'
 
-  const devMiddleware = DevMiddleware(compiler, {
+  // Cast to any - Rspack compiler is API-compatible with webpack middleware at runtime
+  const devMiddleware = DevMiddleware(compiler as any, {
     publicPath: u(
       message,
       u(message, u(message, rendererConfig).output).publicPath
-    ),
+    ) as string,
   })
 
-  const hotMiddleware = HotMiddleware(compiler)
+  const hotMiddleware = HotMiddleware(compiler as any)
 
   const server = createServer((req, res) => {
     devMiddleware(req, res, () => {

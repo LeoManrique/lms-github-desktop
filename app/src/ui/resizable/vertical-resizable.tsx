@@ -195,7 +195,10 @@ export class VerticalResizable extends React.Component<
   public render() {
     const style: React.CSSProperties = {
       height: this.getCurrentHeight(),
-      maxHeight: this.props.maximumHeight,
+      maxHeight:
+        this.props.maximumHeight === Infinity
+          ? undefined
+          : this.props.maximumHeight,
       minHeight: this.props.minimumHeight,
     }
 
