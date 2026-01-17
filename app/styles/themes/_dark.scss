@@ -438,6 +438,32 @@ body.theme-dark {
   --md-neutral-muted-color: rgba(110, 118, 129, 0.4);
   --md-accent-emphasis-color: #1f6feb;
   --md-accent-fg-color: #58a6ff;
+
+  // Terminal colors (dark theme - matches GitHub dark mode)
+  --terminal-background-color: #0d1117;
+  --terminal-foreground-color: #c9d1d9;
+  --terminal-cursor-color: #2f81f7;
+  --terminal-cursor-accent-color: #0d1117;
+  --terminal-selection-background-color: rgba(56, 139, 253, 0.4);
+  --terminal-black-color: #484f58;
+  --terminal-red-color: #ff7b72;
+  --terminal-green-color: #3fb950;
+  --terminal-yellow-color: #d29922;
+  --terminal-blue-color: #58a6ff;
+  --terminal-magenta-color: #bc8cff;
+  --terminal-cyan-color: #39c5cf;
+  --terminal-white-color: #b1bac4;
+  --terminal-bright-black-color: #6e7681;
+  --terminal-bright-red-color: #ffa198;
+  --terminal-bright-green-color: #56d364;
+  --terminal-bright-yellow-color: #e3b341;
+  --terminal-bright-blue-color: #79c0ff;
+  --terminal-bright-magenta-color: #d2a8ff;
+  --terminal-bright-cyan-color: #56d4dd;
+  --terminal-bright-white-color: #f0f6fc;
+  --terminal-header-background-color: #161b22;
+  --terminal-header-text-color: #8b949e;
+  --terminal-header-border-color: #30363d;
 }
 
 // this emulates the cursor for the co-author input because it isn't exactly

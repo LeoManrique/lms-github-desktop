@@ -13,10 +13,11 @@
     "noUnusedLocals": true,
     "sourceMap": true,
     "strict": true,
-    "outDir": "./build",
-    "useUnknownInCatchVariables": false
+    "outDir": "./dist",
+    "useUnknownInCatchVariables": false,
+    "types": ["node"]
   },
   "include": ["*.ts"],
-  "exclude": ["node_modules", "build"],
+  "exclude": ["node_modules", "build", "dist"],
   "compileOnSave": false
 }

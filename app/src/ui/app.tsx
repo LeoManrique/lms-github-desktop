@@ -3452,6 +3452,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             !this.state.commitMessageGenerationButtonClicked
           }
           commitSectionHeight={state.commitSectionHeight}
+          terminalSectionHeight={state.terminalSectionHeight}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

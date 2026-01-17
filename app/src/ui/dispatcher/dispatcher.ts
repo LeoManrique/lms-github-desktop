@@ -1049,6 +1049,21 @@ export class Dispatcher {
   }
 
   /**
+   * Set the height of the terminal section below the diff view.
+   */
+  public setTerminalSectionHeight(height: number): Promise<void> {
+    return this.appStore._setTerminalSectionHeight(height)
+  }
+
+  /**
+   * Reset the height of the terminal section below the diff view
+   * to its default value.
+   */
+  public resetTerminalSectionHeight(): Promise<void> {
+    return this.appStore._resetTerminalSectionHeight()
+  }
+
+  /**
    * Set the width of the commit summary column in the
    * history view to the given value.
    */

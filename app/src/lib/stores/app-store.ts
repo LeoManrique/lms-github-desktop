@@ -386,6 +386,9 @@ const pushPullButtonWidthConfigKey: string = 'push-pull-button-width'
 const defaultCommitSectionHeight: number = 220
 const commitSectionHeightConfigKey: string = 'commit-section-height'
 
+const defaultTerminalSectionHeight: number = 200
+const terminalSectionHeightConfigKey: string = 'terminal-section-height'
+
 const askToMoveToApplicationsFolderDefault: boolean = true
 const confirmRepoRemovalDefault: boolean = true
 const showCommitLengthWarningDefault: boolean = false
@@ -529,6 +532,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private branchDropdownWidth = constrain(defaultBranchDropdownWidth)
   private pushPullButtonWidth = constrain(defaultPushPullButtonWidth)
   private commitSectionHeight = constrain(defaultCommitSectionHeight)
+  private terminalSectionHeight = constrain(defaultTerminalSectionHeight)
 
   private windowState: WindowState | null = null
   private windowZoomFactor: number = 1
@@ -1086,6 +1090,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       stashedFilesWidth: this.stashedFilesWidth,
       pullRequestFilesListWidth: this.pullRequestFileListWidth,
       commitSectionHeight: this.commitSectionHeight,
+      terminalSectionHeight: this.terminalSectionHeight,
       appMenuState: this.appMenu ? this.appMenu.openMenus : [],
       highlightAccessKeys: this.highlightAccessKeys,
       isUpdateAvailableBannerVisible: this.isUpdateAvailableBannerVisible,
@@ -2225,6 +2230,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
     this.commitSectionHeight = constrain(
       getNumber(commitSectionHeightConfigKey, defaultCommitSectionHeight)
+    )
+    this.terminalSectionHeight = constrain(
+      getNumber(terminalSectionHeightConfigKey, defaultTerminalSectionHeight)
     )
 
     this.updateResizableConstraints()
@@ -5435,6 +5443,25 @@ export class AppStore extends TypedBaseStore<IAppState> {
       value: defaultCommitSectionHeight,
     }
     localStorage.removeItem(commitSectionHeightConfigKey)
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
+  public _setTerminalSectionHeight(height: number): Promise<void> {
+    this.terminalSectionHeight = { ...this.terminalSectionHeight, value: height }
+    setNumber(terminalSectionHeightConfigKey, height)
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
+  public _resetTerminalSectionHeight(): Promise<void> {
+    this.terminalSectionHeight = {
+      ...this.terminalSectionHeight,
+      value: defaultTerminalSectionHeight,
+    }
+    localStorage.removeItem(terminalSectionHeightConfigKey)
     this.emitUpdate()
 
     return Promise.resolve()

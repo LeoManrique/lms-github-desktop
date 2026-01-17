@@ -260,6 +260,11 @@ export class AppWindow {
     this.window.focus()
   }
 
+  /** Get the underlying BrowserWindow instance. */
+  public getBrowserWindow(): BrowserWindow {
+    return this.window
+  }
+
   /** Selects all the windows web contents */
   public selectAllWindowContents() {
     this.window.webContents.selectAll()

@@ -51,6 +51,7 @@ import {
 import { initializeDesktopNotifications } from './notifications'
 import parseCommandLineArgs from 'minimist'
 import { CLIAction } from '../lib/cli-action'
+import { terminalManager } from './terminal-manager'
 
 app.setAppLogsPath()
 enableSourceMaps()
@@ -725,6 +726,31 @@ app.on('ready', () => {
   ipcMain.handle('request-notifications-permission', async () =>
     requestNotificationsPermission()
   )
+
+  // Terminal IPC handlers
+  ipcMain.handle('terminal-get-or-spawn', async (_, cwd: string) => {
+    return terminalManager.getOrSpawn(cwd)
+  })
+
+  ipcMain.on('terminal-detach', (_, cwd: string) => {
+    terminalManager.detach(cwd)
+  })
+
+  ipcMain.handle('terminal-get-scrollback', async (_, cwd: string) => {
+    return terminalManager.getScrollback(cwd)
+  })
+
+  ipcMain.on('terminal-input', (_, cwd: string, data: string) => {
+    terminalManager.write(cwd, data)
+  })
+
+  ipcMain.on('terminal-resize', (_, cwd: string, cols: number, rows: number) => {
+    terminalManager.resize(cwd, cols, rows)
+  })
+
+  ipcMain.handle('terminal-kill', async (_, cwd: string) => {
+    terminalManager.kill(cwd)
+  })
 })
 
 app.on('activate', () => {
@@ -784,11 +810,16 @@ function createWindow() {
   }
 
   window.onClosed(() => {
+    // Kill all terminal processes when window closes
+    terminalManager.killAll()
     mainWindow = null
     if (!__DARWIN__ && !preventQuit) {
       app.quit()
     }
   })
+
+  // Set up terminal manager with the browser window
+  terminalManager.setWindow(window.getBrowserWindow())
 
   window.onDidLoad(() => {
     window.show()

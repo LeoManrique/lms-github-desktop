@@ -117,6 +117,10 @@ verifyInjectedSassVariables(outRoot)
   })
   .then(appPaths => {
     console.log(`Built to ${appPaths}`)
+    return rebuildNativeModules(appPaths)
+  })
+  .then(() => {
+    console.log('Build complete!')
   })
 
 function packageApp() {
@@ -221,6 +225,67 @@ function packageApp() {
       InternalName: getProductName(),
     },
   })
+}
+
+/**
+ * Rebuild native modules for Electron in the packaged app.
+ * This is necessary for modules like node-pty that have native bindings.
+ */
+async function rebuildNativeModules(appPaths: string[]): Promise<void> {
+  // Get the Electron version from package.json
+  const pkg = require(path.join(projectRoot, 'package.json'))
+  const electronVersion = pkg.devDependencies.electron
+
+  for (const appPath of appPaths) {
+    let appResourcePath: string
+
+    if (process.platform === 'darwin') {
+      // On macOS, electron-packager returns the directory containing the .app bundle
+      // We need to find the .app file inside and get its Contents/Resources/app
+      const appContents = readdirSync(appPath)
+      const appBundle = appContents.find(f => f.endsWith('.app'))
+      if (!appBundle) {
+        console.log(`  Skipping rebuild - no .app bundle found in ${appPath}`)
+        continue
+      }
+      appResourcePath = path.join(appPath, appBundle, 'Contents', 'Resources', 'app')
+    } else if (process.platform === 'win32') {
+      // On Windows, resources are in the resources/app folder
+      appResourcePath = path.join(appPath, 'resources', 'app')
+    } else {
+      // On Linux, resources are in the resources/app folder
+      appResourcePath = path.join(appPath, 'resources', 'app')
+    }
+
+    // Check if node_modules exists in the packaged app
+    const nodeModulesPath = path.join(appResourcePath, 'node_modules')
+    if (!existsSync(nodeModulesPath)) {
+      console.log(`  Skipping rebuild - no node_modules at ${nodeModulesPath}`)
+      continue
+    }
+
+    console.log(`Rebuilding native modules for Electron ${electronVersion}…`)
+    console.log(`  App path: ${appResourcePath}`)
+
+    try {
+      cp.execSync(
+        `npx @electron/rebuild -v ${electronVersion}`,
+        {
+          cwd: appResourcePath,
+          env: process.env,
+          stdio: 'inherit',
+        }
+      )
+      console.log('  Native modules rebuilt successfully')
+    } catch (error) {
+      console.error('  Failed to rebuild native modules:', error)
+      // Don't fail the build for this - it might work anyway
+      // and the user can always run the rebuild manually
+      if (!isDevelopmentBuild) {
+        throw error
+      }
+    }
+  }
 }
 
 function removeAndCopy(source: string, destination: string) {

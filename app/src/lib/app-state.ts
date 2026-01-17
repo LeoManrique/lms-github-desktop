@@ -197,6 +197,9 @@ export interface IAppState {
   /** The height of the commit section in the changes sidebar. */
   readonly commitSectionHeight: IConstrainedValue
 
+  /** The height of the terminal section below the diff view. */
+  readonly terminalSectionHeight: IConstrainedValue
+
   /**
    * Used to highlight access keys throughout the app when the
    * Alt key is pressed. Only applicable on non-macOS platforms.

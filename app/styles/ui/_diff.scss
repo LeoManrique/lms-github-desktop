@@ -940,3 +940,95 @@
     }
   }
 }
+
+.changes-content-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+
+  .changes-content-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 100px;
+    overflow: hidden;
+  }
+
+  // Terminal section resizable at the bottom - must not shrink
+  #terminal-section-resizable {
+    flex-shrink: 0;
+    background: var(--background-color) !important;
+    overflow: hidden;
+  }
+}
+
+.terminal-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 5px;
+  background: var(--background-color);
+  border-top: 1px solid var(--box-border-color);
+
+  .terminal-container {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--background-color);
+
+    // xterm.js internal elements - match background
+    .xterm,
+    .xterm-screen,
+    .xterm-viewport,
+    .xterm-scrollable-element {
+      background: var(--background-color) !important;
+    }
+
+    .xterm {
+      height: 100%;
+    }
+
+    // Error state
+    &.terminal-error {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--box-background-color);
+
+      .terminal-error-content {
+        text-align: center;
+        color: var(--text-secondary-color);
+        padding: var(--spacing);
+
+        p {
+          margin: 0 0 var(--spacing-half) 0;
+        }
+
+        .terminal-error-message {
+          font-size: var(--font-size-sm);
+          color: var(--error-color);
+          max-width: 400px;
+          word-break: break-word;
+        }
+
+        .terminal-retry-button {
+          margin-top: var(--spacing);
+          padding: var(--spacing-half) var(--spacing);
+          border: 1px solid var(--box-border-color);
+          border-radius: var(--border-radius);
+          background: var(--button-background);
+          color: var(--button-text-color);
+          cursor: pointer;
+
+          &:hover {
+            background: var(--button-hover-background);
+          }
+        }
+      }
+    }
+  }
+}

@@ -550,6 +550,32 @@ $overlay-background-color: rgba(0, 0, 0, 0.4);
   --md-neutral-muted-color: rgba(175, 184, 193, 0.2);
   --md-accent-emphasis-color: #0969da;
   --md-accent-fg-color: #0969da;
+
+  // Terminal colors (light theme)
+  --terminal-background-color: #{$gray-900};
+  --terminal-foreground-color: #{$gray-100};
+  --terminal-cursor-color: #{$blue};
+  --terminal-cursor-accent-color: #{$gray-900};
+  --terminal-selection-background-color: #{rgba($blue, 0.4)};
+  --terminal-black-color: #000000;
+  --terminal-red-color: #cd3131;
+  --terminal-green-color: #00bc00;
+  --terminal-yellow-color: #949800;
+  --terminal-blue-color: #0451a5;
+  --terminal-magenta-color: #bc05bc;
+  --terminal-cyan-color: #0598bc;
+  --terminal-white-color: #555555;
+  --terminal-bright-black-color: #686868;
+  --terminal-bright-red-color: #cd3131;
+  --terminal-bright-green-color: #14ce14;
+  --terminal-bright-yellow-color: #e5e510;
+  --terminal-bright-blue-color: #3b8eea;
+  --terminal-bright-magenta-color: #bc3fbc;
+  --terminal-bright-cyan-color: #11a8cd;
+  --terminal-bright-white-color: #a5a5a5;
+  --terminal-header-background-color: #{darken($gray-900, 2%)};
+  --terminal-header-text-color: #{$gray-400};
+  --terminal-header-border-color: #{$gray-800};
 }
 
 ::backdrop {

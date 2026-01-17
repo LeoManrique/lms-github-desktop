@@ -86,6 +86,13 @@ export type RequestChannels = {
   'show-installing-update': () => void
   'install-windows-cli': () => void
   'uninstall-windows-cli': () => void
+  // Terminal IPC channels (fire-and-forget)
+  'terminal-detach': (cwd: string) => void
+  'terminal-input': (cwd: string, data: string) => void
+  'terminal-resize': (cwd: string, cols: number, rows: number) => void
+  // Terminal IPC channels (main → renderer)
+  'terminal-data': (terminalId: string, data: string) => void
+  'terminal-exit': (terminalId: string, exitCode: number) => void
 }
 
 /**
@@ -133,4 +140,10 @@ export type RequestResponseChannels = {
   ) => Promise<string | null>
   'get-notifications-permission': () => Promise<DesktopNotificationPermission>
   'request-notifications-permission': () => Promise<boolean>
+  // Terminal IPC channels (request-response)
+  'terminal-get-or-spawn': (
+    cwd: string
+  ) => Promise<{ terminalId: string; isNew: boolean }>
+  'terminal-get-scrollback': (cwd: string) => Promise<string[]>
+  'terminal-kill': (cwd: string) => Promise<void>
 }

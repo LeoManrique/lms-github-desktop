@@ -8,8 +8,9 @@ import { NoChanges } from './changes/no-changes'
 import { MultipleSelection } from './changes/multiple-selection'
 import { FilesChangedBadge } from './changes/files-changed-badge'
 import { SelectedCommits, CompareSidebar } from './history'
-import { Resizable } from './resizable'
+import { Resizable, VerticalResizable } from './resizable'
 import { TabBar } from './tab-bar'
+import { Terminal } from './terminal'
 import {
   IRepositoryState,
   RepositorySectionTab,
@@ -116,6 +117,9 @@ interface IRepositoryViewProps {
 
   /** The height of the commit section in the changes sidebar. */
   readonly commitSectionHeight: IConstrainedValue
+
+  /** The height of the terminal section below the diff view. */
+  readonly terminalSectionHeight: IConstrainedValue
 }
 
 interface IRepositoryViewState {
@@ -368,6 +372,14 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.setCommitSectionHeight(height)
   }
 
+  private handleTerminalSectionHeightReset = () => {
+    this.props.dispatcher.resetTerminalSectionHeight()
+  }
+
+  private handleTerminalSectionResize = (height: number) => {
+    this.props.dispatcher.setTerminalSectionHeight(height)
+  }
+
   private renderSidebar(): JSX.Element {
     return (
       <FocusContainer onFocusWithinChanged={this.onSidebarFocusWithinChanged}>
@@ -595,10 +607,48 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.changeImageDiffType(imageDiffType)
   }
 
+  private onTerminalCommandComplete = () => {
+    // Refresh repository state without stealing focus
+    this.props.dispatcher.refreshRepository(this.props.repository)
+  }
+
+  private renderTerminalSection(): JSX.Element {
+    return (
+      <VerticalResizable
+        id="terminal-section-resizable"
+        height={this.props.terminalSectionHeight.value}
+        minimumHeight={this.props.terminalSectionHeight.min}
+        maximumHeight={
+          this.props.terminalSectionHeight.max === Infinity
+            ? undefined
+            : this.props.terminalSectionHeight.max
+        }
+        onResize={this.handleTerminalSectionResize}
+        onReset={this.handleTerminalSectionHeightReset}
+        description="Terminal section"
+      >
+        <div className="terminal-section">
+          <Terminal
+            cwd={this.props.repository.path}
+            onCommandComplete={this.onTerminalCommandComplete}
+          />
+        </div>
+      </VerticalResizable>
+    )
+  }
+
   private renderContent(): JSX.Element | null {
     const selectedSection = this.props.state.selectedSection
     if (selectedSection === RepositorySectionTab.Changes) {
-      return this.renderContentForChanges()
+      const changesContent = this.renderContentForChanges()
+      return (
+        <div className="changes-content-container">
+          <div className="changes-content-main">
+            {changesContent}
+          </div>
+          {this.renderTerminalSection()}
+        </div>
+      )
     } else if (selectedSection === RepositorySectionTab.History) {
       return this.renderContentForHistory()
     } else {
