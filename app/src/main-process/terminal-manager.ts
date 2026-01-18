@@ -17,9 +17,18 @@ const MAX_SCROLLBACK_LINES = 1000
 class TerminalManager {
   private terminals = new Map<string, IManagedTerminal>()
   private window: BrowserWindow | null = null
+  private isQuitting = false
 
   public setWindow(window: BrowserWindow) {
     this.window = window
+  }
+
+  /**
+   * Mark the manager as quitting to prevent IPC messages
+   * during app shutdown that could cause issues.
+   */
+  public setQuitting(): void {
+    this.isQuitting = true
   }
 
   /**
@@ -78,6 +87,11 @@ class TerminalManager {
       }
 
       ptyProcess.onData((data: string) => {
+        // Don't process data during app quit
+        if (this.isQuitting) {
+          return
+        }
+
         this.appendToScrollback(cwd, data)
 
         if (terminal.isAttached) {
@@ -86,7 +100,10 @@ class TerminalManager {
       })
 
       ptyProcess.onExit(({ exitCode }) => {
-        this.window?.webContents.send('terminal-exit', id, exitCode)
+        // Don't send IPC messages during app quit - the window may be destroyed
+        if (!this.isQuitting) {
+          this.window?.webContents.send('terminal-exit', id, exitCode)
+        }
         this.terminals.delete(cwd)
       })
 
@@ -149,13 +166,28 @@ class TerminalManager {
   }
 
   public resize(cwd: string, cols: number, rows: number): void {
-    this.terminals.get(cwd)?.pty.resize(cols, rows)
+    const terminal = this.terminals.get(cwd)
+    if (!terminal) {
+      return
+    }
+
+    try {
+      terminal.pty.resize(cols, rows)
+    } catch (error) {
+      // Ignore resize errors - can happen if PTY is not ready or already closed
+      console.warn('Terminal resize failed:', error)
+    }
   }
 
   public kill(cwd: string): void {
     const terminal = this.terminals.get(cwd)
     if (terminal) {
-      terminal.pty.kill()
+      try {
+        terminal.pty.kill()
+      } catch (error) {
+        // Ignore errors - process may already be dead
+        console.warn('Terminal kill failed:', error)
+      }
       this.terminals.delete(cwd)
     }
   }

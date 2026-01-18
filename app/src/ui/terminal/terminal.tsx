@@ -2,7 +2,6 @@ import * as React from 'react'
 import { Terminal as XTerm, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import * as ipcRenderer from '../../lib/ipc-renderer'
-import { Shell, findShellOrDefault } from '../../lib/shells'
 import { ICustomIntegration } from '../../lib/custom-integration'
 
 // Import xterm CSS
@@ -68,6 +67,9 @@ function getTerminalThemeFromCSS(): ITheme {
   }
 }
 
+/** Debounce delay after terminal output to trigger refresh (ms) */
+const COMMAND_COMPLETE_DEBOUNCE_MS = 500
+
 /**
  * Terminal component using xterm.js
  */
@@ -78,6 +80,10 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   private resizeObserver: ResizeObserver | null = null
   private themeObserver: MutationObserver | null = null
   private previousCwd: string | null = null
+  /** Timer for debounced command completion detection */
+  private commandCompleteTimer: number | null = null
+  /** Track if we've received meaningful output (not just initial prompt) */
+  private hasReceivedOutput = false
 
   public constructor(props: ITerminalProps) {
     super(props)
@@ -96,6 +102,13 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   public async componentDidUpdate(prevProps: ITerminalProps) {
     // Repository changed - detach from old, attach to new
     if (prevProps.cwd !== this.props.cwd) {
+      // Cancel any pending refresh for the old repo
+      if (this.commandCompleteTimer !== null) {
+        window.clearTimeout(this.commandCompleteTimer)
+        this.commandCompleteTimer = null
+      }
+      this.hasReceivedOutput = false
+
       // Detach from previous terminal (keeps it running in background)
       this.detachFromTerminal()
 
@@ -140,13 +153,16 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
   /**
    * Resolves the shell path and arguments based on user preferences.
-   * Uses custom shell if configured, otherwise resolves the selected shell.
+   * Uses custom shell if configured, otherwise lets the main process use the default shell.
+   *
+   * Note: findShellOrDefault returns terminal APP paths (like Terminal.app), not shell
+   * executables. For the embedded PTY, we need actual shell executables like /bin/zsh.
    */
   private async resolveShell(): Promise<{
     shellPath: string
     shellArgs: ReadonlyArray<string>
   }> {
-    const { useCustomShell, customShell, selectedShell } = this.props
+    const { useCustomShell, customShell } = this.props
 
     if (useCustomShell && customShell) {
       // Parse custom shell arguments
@@ -159,11 +175,11 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       }
     }
 
-    // Resolve the selected shell using the shell finder
-    const foundShell = await findShellOrDefault(selectedShell)
+    // Let the main process determine the default shell executable
+    // (uses SHELL env var or falls back to /bin/zsh, /bin/bash, /bin/sh)
     return {
-      shellPath: foundShell.path,
-      shellArgs: foundShell.extraArgs || [],
+      shellPath: '',
+      shellArgs: [],
     }
   }
 
@@ -172,12 +188,15 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
    * If one exists, restore its scrollback. Otherwise create new.
    */
   private async attachToTerminal() {
+    console.log('[Terminal] attachToTerminal called, ref:', !!this.terminalRef.current)
     if (!this.terminalRef.current) {
+      console.log('[Terminal] No terminal ref, returning')
       return
     }
 
     // Create xterm instance if needed
     if (!this.xterm) {
+      console.log('[Terminal] Creating new xterm instance')
       this.xterm = new XTerm({
         rows: 24,
         cols: 80,
@@ -203,9 +222,11 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
         ipcRenderer.send('terminal-input', this.props.cwd, data)
       })
 
-      // Listen for terminal resize events
+      // Listen for terminal resize events - only send if terminal is attached
       this.xterm.onResize(({ cols, rows }) => {
-        ipcRenderer.send('terminal-resize', this.props.cwd, cols, rows)
+        if (this.state.terminalId) {
+          ipcRenderer.send('terminal-resize', this.props.cwd, cols, rows)
+        }
       })
 
       // Set up IPC listeners for PTY output
@@ -221,12 +242,29 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
     // Fit terminal to container
     this.fitAddon?.fit()
+    console.log('[Terminal] Fitted terminal to container')
 
     // Resolve the shell path based on user preferences
-    const { shellPath, shellArgs } = await this.resolveShell()
+    console.log('[Terminal] Resolving shell, props:', {
+      selectedShell: this.props.selectedShell,
+      useCustomShell: this.props.useCustomShell,
+      customShell: this.props.customShell,
+    })
+    let shellPath: string
+    let shellArgs: ReadonlyArray<string>
+    try {
+      const resolved = await this.resolveShell()
+      shellPath = resolved.shellPath
+      shellArgs = resolved.shellArgs
+      console.log('[Terminal] Resolved shell:', shellPath, shellArgs)
+    } catch (err) {
+      console.error('[Terminal] Shell resolution failed:', err)
+      return
+    }
 
     // Get or spawn terminal for this repository
     try {
+      console.log('[Terminal] Invoking terminal-get-or-spawn for cwd:', this.props.cwd)
       const { terminalId, isNew, error } = await ipcRenderer.invoke(
         'terminal-get-or-spawn',
         this.props.cwd,
@@ -235,9 +273,10 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       )
 
       if (error) {
-        console.error('Terminal spawn error:', error)
+        console.error('[Terminal] spawn error:', error)
         return
       }
+      console.log('[Terminal] Got terminalId:', terminalId, 'isNew:', isNew)
 
       this.setState({ terminalId })
       this.previousCwd = this.props.cwd
@@ -281,7 +320,33 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   ) => {
     if (terminalId === this.state.terminalId && this.xterm) {
       this.xterm.write(data)
+
+      // Mark that we've received output
+      this.hasReceivedOutput = true
+
+      // Reset the debounce timer - when output stops for a bit,
+      // a command likely finished and we should refresh
+      this.scheduleCommandCompleteRefresh()
     }
+  }
+
+  /**
+   * Schedule a debounced refresh after terminal activity.
+   * When there's output followed by inactivity, a command likely finished.
+   */
+  private scheduleCommandCompleteRefresh() {
+    // Clear any existing timer
+    if (this.commandCompleteTimer !== null) {
+      window.clearTimeout(this.commandCompleteTimer)
+    }
+
+    // Schedule refresh after period of inactivity
+    this.commandCompleteTimer = window.setTimeout(() => {
+      this.commandCompleteTimer = null
+      if (this.hasReceivedOutput) {
+        this.props.onCommandComplete()
+      }
+    }, COMMAND_COMPLETE_DEBOUNCE_MS)
   }
 
   private handleTerminalExit = (
@@ -290,6 +355,12 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     _exitCode: number
   ) => {
     if (terminalId === this.state.terminalId) {
+      // Cancel any pending debounced refresh
+      if (this.commandCompleteTimer !== null) {
+        window.clearTimeout(this.commandCompleteTimer)
+        this.commandCompleteTimer = null
+      }
+
       // Shell exited, trigger refresh
       this.props.onCommandComplete()
 
@@ -338,6 +409,12 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     // Remove IPC listeners
     ipcRenderer.removeListener('terminal-data', this.handleTerminalData)
     ipcRenderer.removeListener('terminal-exit', this.handleTerminalExit)
+
+    // Cancel any pending command complete timer
+    if (this.commandCompleteTimer !== null) {
+      window.clearTimeout(this.commandCompleteTimer)
+      this.commandCompleteTimer = null
+    }
 
     // Detach, don't kill (preserve terminal for session)
     this.detachFromTerminal()

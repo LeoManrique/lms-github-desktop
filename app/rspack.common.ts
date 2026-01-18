@@ -2,7 +2,7 @@ import * as path from 'path'
 import { rspack, RspackOptions } from '@rspack/core'
 import { getReplacements } from './app-info'
 
-export const externals = ['7zip', 'node-pty', 'desktop-notifications']
+export const externals = ['7zip', 'node-pty', 'desktop-notifications', 'tslib']
 
 const outputDir = 'out'
 export const replacements = getReplacements()

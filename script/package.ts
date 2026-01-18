@@ -71,6 +71,7 @@ function packageOSX() {
   cp.execSync(
     `ditto -ck --keepParent "${distPath}/${productName}.app" "${dest}"`
   )
+  console.log(`Created ${dest}`)
 }
 
 function packageWindows() {

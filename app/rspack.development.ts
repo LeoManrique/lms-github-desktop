@@ -63,11 +63,19 @@ const rendererConfig: RspackOptions = {
     rules: [
       ...(common.renderer.module?.rules || []),
       {
-        test: /\.(scss|css)$/,
+        test: /\.scss$/,
         use: [
           'style-loader',
           { loader: 'css-loader', options: { sourceMap: true } },
           { loader: 'sass-loader', options: { sourceMap: true } },
+        ],
+        type: 'javascript/auto',
+      },
+      {
+        test: /\.css$/,
+        use: [
+          'style-loader',
+          { loader: 'css-loader', options: { sourceMap: true } },
         ],
         type: 'javascript/auto',
       },
@@ -89,11 +97,19 @@ const crashConfig: RspackOptions = {
     rules: [
       ...(common.crash.module?.rules || []),
       {
-        test: /\.(scss|css)$/,
+        test: /\.scss$/,
         use: [
           'style-loader',
           { loader: 'css-loader', options: { sourceMap: true } },
           { loader: 'sass-loader', options: { sourceMap: true } },
+        ],
+        type: 'javascript/auto',
+      },
+      {
+        test: /\.css$/,
+        use: [
+          'style-loader',
+          { loader: 'css-loader', options: { sourceMap: true } },
         ],
         type: 'javascript/auto',
       },

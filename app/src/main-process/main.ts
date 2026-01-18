@@ -132,6 +132,14 @@ app.on('window-all-closed', () => {
   // the crash process window which is shown after the main window is closed.
 })
 
+app.on('will-quit', () => {
+  // Mark as quitting to prevent IPC messages to destroyed windows
+  terminalManager.setQuitting()
+  // Clean up terminal processes before quitting
+  // This is especially important on macOS where window.onClosed may not fire
+  terminalManager.killAll()
+})
+
 process.on('uncaughtException', (error: Error) => {
   error = withSourceMappedStack(error)
   reportError(error, getExtraErrorContext())
@@ -813,6 +821,8 @@ function createWindow() {
   }
 
   window.onClosed(() => {
+    // Mark as quitting to prevent IPC messages to destroyed window
+    terminalManager.setQuitting()
     // Kill all terminal processes when window closes
     terminalManager.killAll()
     mainWindow = null

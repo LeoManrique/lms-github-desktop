@@ -35,11 +35,19 @@ const rendererConfig: RspackOptions = {
     rules: [
       ...(common.renderer.module?.rules || []),
       {
-        test: /\.(scss|css)$/,
+        test: /\.scss$/,
         use: [
           rspack.CssExtractRspackPlugin.loader,
           'css-loader',
           'sass-loader',
+        ],
+        type: 'javascript/auto',
+      },
+      {
+        test: /\.css$/,
+        use: [
+          rspack.CssExtractRspackPlugin.loader,
+          'css-loader',
         ],
         type: 'javascript/auto',
       },
@@ -67,8 +75,13 @@ const crashConfig: RspackOptions = {
     rules: [
       ...(common.crash.module?.rules || []),
       {
-        test: /\.(scss|css)$/,
+        test: /\.scss$/,
         use: [rspack.CssExtractRspackPlugin.loader, 'css-loader', 'sass-loader'],
+        type: 'javascript/auto',
+      },
+      {
+        test: /\.css$/,
+        use: [rspack.CssExtractRspackPlugin.loader, 'css-loader'],
         type: 'javascript/auto',
       },
     ],
