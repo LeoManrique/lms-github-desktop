@@ -26,8 +26,16 @@ class TerminalManager {
    * Get or create a terminal for a repository path.
    * If a terminal already exists for this repo, returns its ID.
    * Otherwise spawns a new one.
+   *
+   * @param cwd The working directory for the terminal
+   * @param shellPath The path to the shell executable
+   * @param shellArgs Optional arguments to pass to the shell
    */
-  public getOrSpawn(cwd: string): { terminalId: string; isNew: boolean; error?: string } {
+  public getOrSpawn(
+    cwd: string,
+    shellPath: string,
+    shellArgs?: ReadonlyArray<string>
+  ): { terminalId: string; isNew: boolean; error?: string } {
     const existing = this.terminals.get(cwd)
     if (existing) {
       existing.isAttached = true
@@ -35,7 +43,7 @@ class TerminalManager {
     }
 
     const id = uuid()
-    const shell = this.getDefaultShell()
+    const shell = shellPath || this.getDefaultShell()
 
     // Verify cwd exists, fall back to home directory
     let workingDir = cwd
@@ -52,7 +60,8 @@ class TerminalManager {
     const env = this.getTerminalEnv()
 
     try {
-      const ptyProcess = pty.spawn(shell, [], {
+      const args = shellArgs ? [...shellArgs] : []
+      const ptyProcess = pty.spawn(shell, args, {
         name: 'xterm-256color',
         cols: 80,
         rows: 30,

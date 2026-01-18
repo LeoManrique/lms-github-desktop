@@ -2,7 +2,7 @@
 
 // This doesn't import all of CodeMirror, instead it only imports
 // a small subset. This hack is brought to you by webpack and you
-// can read all about it in webpack.common.js.
+// can read all about it in rspack.common.ts.
 import {
   getMode,
   innerMode,

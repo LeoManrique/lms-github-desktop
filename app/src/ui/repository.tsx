@@ -11,6 +11,8 @@ import { SelectedCommits, CompareSidebar } from './history'
 import { Resizable, VerticalResizable } from './resizable'
 import { TabBar } from './tab-bar'
 import { Terminal } from './terminal'
+import { Shell } from '../lib/shells'
+import { ICustomIntegration } from '../lib/custom-integration'
 import {
   IRepositoryState,
   RepositorySectionTab,
@@ -120,6 +122,15 @@ interface IRepositoryViewProps {
 
   /** The height of the terminal section below the diff view. */
   readonly terminalSectionHeight: IConstrainedValue
+
+  /** The user's selected shell preference */
+  readonly selectedShell: Shell
+
+  /** Whether to use a custom shell instead of the selected one */
+  readonly useCustomShell: boolean
+
+  /** The custom shell configuration, if useCustomShell is true */
+  readonly customShell: ICustomIntegration | null
 }
 
 interface IRepositoryViewState {
@@ -631,6 +642,9 @@ export class RepositoryView extends React.Component<
           <Terminal
             cwd={this.props.repository.path}
             onCommandComplete={this.onTerminalCommandComplete}
+            selectedShell={this.props.selectedShell}
+            useCustomShell={this.props.useCustomShell}
+            customShell={this.props.customShell}
           />
         </div>
       </VerticalResizable>

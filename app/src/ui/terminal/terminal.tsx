@@ -2,6 +2,8 @@ import * as React from 'react'
 import { Terminal as XTerm, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import * as ipcRenderer from '../../lib/ipc-renderer'
+import { Shell, findShellOrDefault } from '../../lib/shells'
+import { ICustomIntegration } from '../../lib/custom-integration'
 
 // Import xterm CSS
 import '@xterm/xterm/css/xterm.css'
@@ -11,6 +13,12 @@ interface ITerminalProps {
   readonly cwd: string
   /** Called when a command finishes execution */
   readonly onCommandComplete: () => void
+  /** The user's selected shell preference */
+  readonly selectedShell: Shell
+  /** Whether to use a custom shell instead of the selected one */
+  readonly useCustomShell: boolean
+  /** The custom shell configuration, if useCustomShell is true */
+  readonly customShell: ICustomIntegration | null
 }
 
 interface ITerminalState {
@@ -131,6 +139,35 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   }
 
   /**
+   * Resolves the shell path and arguments based on user preferences.
+   * Uses custom shell if configured, otherwise resolves the selected shell.
+   */
+  private async resolveShell(): Promise<{
+    shellPath: string
+    shellArgs: ReadonlyArray<string>
+  }> {
+    const { useCustomShell, customShell, selectedShell } = this.props
+
+    if (useCustomShell && customShell) {
+      // Parse custom shell arguments
+      const args = customShell.arguments
+        ? customShell.arguments.split(' ').filter(arg => arg.length > 0)
+        : []
+      return {
+        shellPath: customShell.path,
+        shellArgs: args,
+      }
+    }
+
+    // Resolve the selected shell using the shell finder
+    const foundShell = await findShellOrDefault(selectedShell)
+    return {
+      shellPath: foundShell.path,
+      shellArgs: foundShell.extraArgs || [],
+    }
+  }
+
+  /**
    * Attach to a terminal for the current repository.
    * If one exists, restore its scrollback. Otherwise create new.
    */
@@ -185,11 +222,16 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     // Fit terminal to container
     this.fitAddon?.fit()
 
+    // Resolve the shell path based on user preferences
+    const { shellPath, shellArgs } = await this.resolveShell()
+
     // Get or spawn terminal for this repository
     try {
       const { terminalId, isNew, error } = await ipcRenderer.invoke(
         'terminal-get-or-spawn',
-        this.props.cwd
+        this.props.cwd,
+        shellPath,
+        shellArgs
       )
 
       if (error) {
@@ -263,10 +305,15 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     // Clear display
     this.xterm?.clear()
 
+    // Resolve shell preferences
+    const { shellPath, shellArgs } = await this.resolveShell()
+
     // Spawn fresh terminal
     const { terminalId } = await ipcRenderer.invoke(
       'terminal-get-or-spawn',
-      this.props.cwd
+      this.props.cwd,
+      shellPath,
+      shellArgs
     )
     this.setState({ terminalId })
     this.sendResize()

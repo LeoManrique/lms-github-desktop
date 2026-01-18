@@ -1,22 +1,31 @@
-import * as common from './webpack.common'
+import * as common from './rspack.common'
+import { rspack, RspackOptions } from '@rspack/core'
 
-import * as webpack from 'webpack'
-import merge from 'webpack-merge'
-
-const config: webpack.Configuration = {
+const config: Partial<RspackOptions> = {
   mode: 'development',
   devtool: 'source-map',
 }
 
-const mainConfig = merge({}, common.main, config)
-const cliConfig = merge({}, common.cli, config)
-const highlighterConfig = merge({}, common.highlighter, config)
+const mainConfig: RspackOptions = {
+  ...common.main,
+  ...config,
+}
+
+const cliConfig: RspackOptions = {
+  ...common.cli,
+  ...config,
+}
+
+const highlighterConfig: RspackOptions = {
+  ...common.highlighter,
+  ...config,
+}
 
 const getRendererEntryPoint = () => {
-  const entry = common.renderer.entry as webpack.EntryObject
+  const entry = common.renderer.entry as Record<string, string>
   if (entry == null) {
     throw new Error(
-      `Unable to resolve entry point. Check webpack.common.ts and try again`
+      `Unable to resolve entry point. Check rspack.common.ts and try again`
     )
   }
 
@@ -37,21 +46,22 @@ const getPortOrDefault = () => {
 }
 
 const port = getPortOrDefault()
-const webpackHotModuleReloadUrl = `webpack-hot-middleware/client?path=http://localhost:${port}/__webpack_hmr`
+const rspackHotModuleReloadUrl = `webpack-hot-middleware/client?path=http://localhost:${port}/__webpack_hmr`
 const publicPath = `http://localhost:${port}/build/`
 
-const rendererConfig = merge({}, common.renderer, config, {
+const rendererConfig: RspackOptions = {
+  ...common.renderer,
+  ...config,
   entry: {
-    renderer: [webpackHotModuleReloadUrl, getRendererEntryPoint()],
+    renderer: [rspackHotModuleReloadUrl, getRendererEntryPoint()],
   },
   output: {
+    ...common.renderer.output,
     publicPath,
   },
   module: {
     rules: [
-      // This will cause the compiled CSS (and sourceMap) to be
-      // embedded within the compiled javascript bundle and added
-      // as a blob:// uri at runtime.
+      ...(common.renderer.module?.rules || []),
       {
         test: /\.(scss|css)$/,
         use: [
@@ -59,21 +69,25 @@ const rendererConfig = merge({}, common.renderer, config, {
           { loader: 'css-loader', options: { sourceMap: true } },
           { loader: 'sass-loader', options: { sourceMap: true } },
         ],
+        type: 'javascript/auto',
       },
     ],
   },
   infrastructureLogging: {
     level: 'error',
   },
-  plugins: [new webpack.HotModuleReplacementPlugin()],
-})
+  plugins: [
+    ...(common.renderer.plugins || []),
+    new rspack.HotModuleReplacementPlugin(),
+  ],
+}
 
-const crashConfig = merge({}, common.crash, config, {
+const crashConfig: RspackOptions = {
+  ...common.crash,
+  ...config,
   module: {
     rules: [
-      // This will cause the compiled CSS (and sourceMap) to be
-      // embedded within the compiled javascript bundle and added
-      // as a blob:// uri at runtime.
+      ...(common.crash.module?.rules || []),
       {
         test: /\.(scss|css)$/,
         use: [
@@ -81,10 +95,11 @@ const crashConfig = merge({}, common.crash, config, {
           { loader: 'css-loader', options: { sourceMap: true } },
           { loader: 'sass-loader', options: { sourceMap: true } },
         ],
+        type: 'javascript/auto',
       },
     ],
   },
-})
+}
 
 // eslint-disable-next-line no-restricted-syntax
 export default [

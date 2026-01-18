@@ -728,9 +728,12 @@ app.on('ready', () => {
   )
 
   // Terminal IPC handlers
-  ipcMain.handle('terminal-get-or-spawn', async (_, cwd: string) => {
-    return terminalManager.getOrSpawn(cwd)
-  })
+  ipcMain.handle(
+    'terminal-get-or-spawn',
+    async (_, cwd: string, shellPath: string, shellArgs?: ReadonlyArray<string>) => {
+      return terminalManager.getOrSpawn(cwd, shellPath, shellArgs)
+    }
+  )
 
   ipcMain.on('terminal-detach', (_, cwd: string) => {
     terminalManager.detach(cwd)

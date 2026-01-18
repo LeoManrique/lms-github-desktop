@@ -142,8 +142,10 @@ export type RequestResponseChannels = {
   'request-notifications-permission': () => Promise<boolean>
   // Terminal IPC channels (request-response)
   'terminal-get-or-spawn': (
-    cwd: string
-  ) => Promise<{ terminalId: string; isNew: boolean }>
+    cwd: string,
+    shellPath: string,
+    shellArgs?: ReadonlyArray<string>
+  ) => Promise<{ terminalId: string; isNew: boolean; error?: string }>
   'terminal-get-scrollback': (cwd: string) => Promise<string[]>
   'terminal-kill': (cwd: string) => Promise<void>
 }

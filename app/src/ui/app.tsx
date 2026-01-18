@@ -3453,6 +3453,9 @@ export class App extends React.Component<IAppProps, IAppState> {
           }
           commitSectionHeight={state.commitSectionHeight}
           terminalSectionHeight={state.terminalSectionHeight}
+          selectedShell={state.selectedShell}
+          useCustomShell={state.useCustomShell}
+          customShell={state.customShell}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

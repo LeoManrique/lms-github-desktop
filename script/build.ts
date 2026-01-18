@@ -6,7 +6,7 @@ import * as cp from 'child_process'
 import * as os from 'os'
 import packager, { OfficialArch, OsxNotarizeOptions } from 'electron-packager'
 import frontMatter from 'front-matter'
-import { externals } from '../app/webpack.common'
+import { externals } from '../app/rspack.common'
 
 interface IChooseALicense {
   readonly title: string

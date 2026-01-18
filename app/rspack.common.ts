@@ -1,24 +1,17 @@
 import * as path from 'path'
-import HtmlWebpackPlugin from 'html-webpack-plugin'
-import webpack from 'webpack'
-import merge from 'webpack-merge'
+import { rspack, RspackOptions } from '@rspack/core'
 import { getReplacements } from './app-info'
 
-export const externals = ['7zip', 'node-pty']
+export const externals = ['7zip', 'node-pty', 'desktop-notifications']
 
 const outputDir = 'out'
 export const replacements = getReplacements()
 
-const commonConfig: webpack.Configuration = {
+const commonConfig: RspackOptions = {
   optimization: {
     emitOnErrors: false,
   },
-  cache: {
-    type: 'filesystem',
-    buildDependencies: {
-      config: [__filename],
-    },
-  },
+  cache: true,
   externals: externals,
   output: {
     filename: '[name].js',
@@ -33,30 +26,29 @@ const commonConfig: webpack.Configuration = {
       {
         test: /\.tsx$/,
         include: path.resolve(__dirname, 'src'),
-        use: [
-          {
-            loader: 'esbuild-loader',
-            options: {
-              loader: 'tsx',
-              target: 'es2022',
-            },
+        loader: 'builtin:swc-loader',
+        options: {
+          jsc: {
+            parser: { syntax: 'typescript', tsx: true },
+            target: 'es2022',
+            transform: { react: { runtime: 'classic' } },
           },
-        ],
+        },
         exclude: /node_modules/,
+        type: 'javascript/auto',
       },
       {
         test: /\.ts$/,
         include: path.resolve(__dirname, 'src'),
-        use: [
-          {
-            loader: 'esbuild-loader',
-            options: {
-              loader: 'ts',
-              target: 'es2022',
-            },
+        loader: 'builtin:swc-loader',
+        options: {
+          jsc: {
+            parser: { syntax: 'typescript', tsx: false },
+            target: 'es2022',
           },
-        ],
+        },
         exclude: /node_modules/,
+        type: 'javascript/auto',
       },
       {
         test: /\.node$/,
@@ -76,26 +68,29 @@ const commonConfig: webpack.Configuration = {
   },
 }
 
-export const main = merge({}, commonConfig, {
+export const main: RspackOptions = {
+  ...commonConfig,
   entry: { main: path.resolve(__dirname, 'src/main-process/main') },
   target: 'electron-main',
   plugins: [
-    new webpack.DefinePlugin(
+    new rspack.DefinePlugin(
       Object.assign({}, replacements, {
         __PROCESS_KIND__: JSON.stringify('main'),
       })
     ),
   ],
-})
+}
 
-export const renderer = merge({}, commonConfig, {
+export const renderer: RspackOptions = {
+  ...commonConfig,
   entry: { renderer: path.resolve(__dirname, 'src/ui/index') },
   target: 'electron-renderer',
   module: {
     rules: [
+      ...(commonConfig.module?.rules || []),
       {
         test: /\.(jpe?g|png|gif|ico)$/,
-        use: ['file?name=[path][name].[ext]'],
+        type: 'asset/resource',
       },
       {
         test: /\.cmd$/,
@@ -104,50 +99,54 @@ export const renderer = merge({}, commonConfig, {
     ],
   },
   plugins: [
-    new HtmlWebpackPlugin({
+    new rspack.HtmlRspackPlugin({
       template: path.join(__dirname, 'static', 'index.html'),
       chunks: ['renderer'],
     }),
-    new webpack.DefinePlugin(
+    new rspack.DefinePlugin(
       Object.assign({}, replacements, {
         __PROCESS_KIND__: JSON.stringify('ui'),
       })
     ),
   ],
-})
+}
 
-export const crash = merge({}, commonConfig, {
+export const crash: RspackOptions = {
+  ...commonConfig,
   entry: { crash: path.resolve(__dirname, 'src/crash/index') },
   target: 'electron-renderer',
   plugins: [
-    new HtmlWebpackPlugin({
+    new rspack.HtmlRspackPlugin({
       title: 'GitHub Desktop',
       filename: 'crash.html',
       chunks: ['crash'],
     }),
-    new webpack.DefinePlugin(
+    new rspack.DefinePlugin(
       Object.assign({}, replacements, {
         __PROCESS_KIND__: JSON.stringify('crash'),
       })
     ),
   ],
-})
+}
 
-export const cli = merge({}, commonConfig, {
+export const cli: RspackOptions = {
+  ...commonConfig,
   entry: { cli: path.resolve(__dirname, 'src/cli/main') },
   target: 'node',
   plugins: [
-    new webpack.DefinePlugin(
+    new rspack.DefinePlugin(
       Object.assign({}, replacements, {
         __PROCESS_KIND__: JSON.stringify('cli'),
       })
     ),
   ],
-})
+}
 
-export const highlighter = merge({}, commonConfig, {
+export const highlighter: RspackOptions = {
+  ...commonConfig,
   entry: { highlighter: path.resolve(__dirname, 'src/highlighter/index') },
   output: {
+    ...commonConfig.output,
     library: {
       name: '[name]',
       type: 'var',
@@ -155,47 +154,59 @@ export const highlighter = merge({}, commonConfig, {
     chunkFilename: 'highlighter/[name].js',
   },
   optimization: {
+    ...commonConfig.optimization,
     chunkIds: 'named',
     splitChunks: {
       cacheGroups: {
-        modes: {
+        codemirrorModes: {
+          test: /[\\/]node_modules[\\/]codemirror[\\/]mode[\\/]/,
+          name: 'codemirror-modes',
+          chunks: 'all',
           enforce: true,
-          name: (mod: any) => {
-            const builtInMode =
-              /node_modules[\\\/]codemirror[\\\/]mode[\\\/](\w+)[\\\/]/i.exec(
-                mod.resource
-              )
-            if (builtInMode) {
-              return `mode/${builtInMode[1]}`
-            }
-            const external =
-              /node_modules[\\\/]codemirror-mode-(\w+)[\\\/]/i.exec(
-                mod.resource
-              )
-            if (external) {
-              return `ext/${external[1]}`
-            }
-            return 'common'
-          },
+        },
+        codemirrorExtModes: {
+          test: /[\\/]node_modules[\\/]codemirror-mode-/,
+          name: 'codemirror-ext-modes',
+          chunks: 'all',
+          enforce: true,
         },
       },
     },
   },
   target: 'webworker',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        include: path.resolve(__dirname, 'src/highlighter'),
+        loader: 'builtin:swc-loader',
+        options: {
+          jsc: {
+            parser: { syntax: 'typescript', tsx: false },
+            target: 'es2021',
+          },
+        },
+        exclude: /node_modules/,
+        type: 'javascript/auto',
+      },
+      {
+        test: /\.node$/,
+        loader: 'awesome-node-loader',
+        options: {
+          name: '[name].[ext]',
+        },
+      },
+    ],
+  },
   plugins: [
-    new webpack.DefinePlugin(
+    new rspack.DefinePlugin(
       Object.assign({}, replacements, {
         __PROCESS_KIND__: JSON.stringify('highlighter'),
       })
     ),
   ],
   resolve: {
-    // We don't want to bundle all of CodeMirror in the highlighter. A web
-    // worker doesn't have access to the DOM and most of CodeMirror's core
-    // code is useless to us in that context. So instead we use this super
-    // nifty subset of codemirror that defines the minimal context needed
-    // to run a mode inside of node. Now, we're not running in node
-    // but CodeMirror doesn't have to know about that.
+    extensions: ['.js', '.ts', '.tsx'],
     alias: {
       codemirror$: 'codemirror/addon/runmode/runmode.node.js',
       '../lib/codemirror$': '../addon/runmode/runmode.node.js',
@@ -203,21 +214,4 @@ export const highlighter = merge({}, commonConfig, {
       '../../addon/runmode/runmode$': '../../addon/runmode/runmode.node.js',
     },
   },
-})
-
-highlighter.module!.rules = [
-  {
-    test: /\.ts$/,
-    include: path.resolve(__dirname, 'src/highlighter'),
-    use: [
-      {
-        loader: 'esbuild-loader',
-        options: {
-          loader: 'ts',
-          target: 'es2021',
-        },
-      },
-    ],
-    exclude: /node_modules/,
-  },
-]
+}
