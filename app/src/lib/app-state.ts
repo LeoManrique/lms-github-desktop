@@ -200,6 +200,12 @@ export interface IAppState {
   /** The height of the terminal section below the diff view. */
   readonly terminalSectionHeight: IConstrainedValue
 
+  /** Whether the terminal section is minimized/collapsed. */
+  readonly terminalMinimized: boolean
+
+  /** The height to restore the terminal to when expanding from minimized state. */
+  readonly terminalExpandedHeight: number
+
   /**
    * Used to highlight access keys throughout the app when the
    * Alt key is pressed. Only applicable on non-macOS platforms.

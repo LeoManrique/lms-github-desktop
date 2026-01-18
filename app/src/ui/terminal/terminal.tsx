@@ -3,6 +3,7 @@ import { Terminal as XTerm, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import * as ipcRenderer from '../../lib/ipc-renderer'
 import { ICustomIntegration } from '../../lib/custom-integration'
+import { Shell } from '../../lib/shells'
 
 // Import xterm CSS
 import '@xterm/xterm/css/xterm.css'
@@ -18,6 +19,8 @@ interface ITerminalProps {
   readonly useCustomShell: boolean
   /** The custom shell configuration, if useCustomShell is true */
   readonly customShell: ICustomIntegration | null
+  /** Called when the session status changes (has session or not) */
+  readonly onSessionChange?: (hasSession: boolean) => void
 }
 
 interface ITerminalState {
@@ -430,6 +433,59 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     // Disconnect theme observer
     this.themeObserver?.disconnect()
     this.themeObserver = null
+  }
+
+  /**
+   * Check if there is an active terminal session.
+   */
+  public hasSession(): boolean {
+    return this.state.terminalId !== null
+  }
+
+  /**
+   * Kill the current terminal session.
+   */
+  public async killSession(): Promise<void> {
+    if (this.state.terminalId) {
+      await ipcRenderer.invoke('terminal-kill', this.props.cwd)
+      this.setState({ terminalId: null })
+      this.xterm?.clear()
+      this.props.onSessionChange?.(false)
+    }
+  }
+
+  /**
+   * Start a new terminal session.
+   * If a session already exists, it will be killed first.
+   */
+  public async newSession(): Promise<void> {
+    // Kill existing session if any
+    if (this.state.terminalId) {
+      await ipcRenderer.invoke('terminal-kill', this.props.cwd)
+      this.xterm?.clear()
+    }
+
+    // Resolve shell preferences
+    const { shellPath, shellArgs } = await this.resolveShell()
+
+    // Spawn fresh terminal
+    const { terminalId, error } = await ipcRenderer.invoke(
+      'terminal-get-or-spawn',
+      this.props.cwd,
+      shellPath,
+      shellArgs
+    )
+
+    if (error) {
+      console.error('[Terminal] newSession error:', error)
+      this.setState({ terminalId: null })
+      this.props.onSessionChange?.(false)
+      return
+    }
+
+    this.setState({ terminalId })
+    this.sendResize()
+    this.props.onSessionChange?.(true)
   }
 
   public render() {

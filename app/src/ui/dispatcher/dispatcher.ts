@@ -1064,6 +1064,13 @@ export class Dispatcher {
   }
 
   /**
+   * Set whether the terminal section is minimized/collapsed.
+   */
+  public setTerminalMinimized(minimized: boolean): Promise<void> {
+    return this.appStore._setTerminalMinimized(minimized)
+  }
+
+  /**
    * Set the width of the commit summary column in the
    * history view to the given value.
    */

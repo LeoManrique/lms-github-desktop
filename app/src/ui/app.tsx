@@ -3453,6 +3453,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           }
           commitSectionHeight={state.commitSectionHeight}
           terminalSectionHeight={state.terminalSectionHeight}
+          terminalMinimized={state.terminalMinimized}
           selectedShell={state.selectedShell}
           useCustomShell={state.useCustomShell}
           customShell={state.customShell}

@@ -388,6 +388,9 @@ const commitSectionHeightConfigKey: string = 'commit-section-height'
 
 const defaultTerminalSectionHeight: number = 200
 const terminalSectionHeightConfigKey: string = 'terminal-section-height'
+const collapsedTerminalHeight: number = 30
+const terminalMinimizedConfigKey: string = 'terminal-minimized'
+const terminalExpandedHeightConfigKey: string = 'terminal-expanded-height'
 
 const askToMoveToApplicationsFolderDefault: boolean = true
 const confirmRepoRemovalDefault: boolean = true
@@ -533,6 +536,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private pushPullButtonWidth = constrain(defaultPushPullButtonWidth)
   private commitSectionHeight = constrain(defaultCommitSectionHeight)
   private terminalSectionHeight = constrain(defaultTerminalSectionHeight)
+  private terminalMinimized: boolean = false
+  private terminalExpandedHeight: number = defaultTerminalSectionHeight
 
   private windowState: WindowState | null = null
   private windowZoomFactor: number = 1
@@ -1091,6 +1096,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
       pullRequestFilesListWidth: this.pullRequestFileListWidth,
       commitSectionHeight: this.commitSectionHeight,
       terminalSectionHeight: this.terminalSectionHeight,
+      terminalMinimized: this.terminalMinimized,
+      terminalExpandedHeight: this.terminalExpandedHeight,
       appMenuState: this.appMenu ? this.appMenu.openMenus : [],
       highlightAccessKeys: this.highlightAccessKeys,
       isUpdateAvailableBannerVisible: this.isUpdateAvailableBannerVisible,
@@ -2233,6 +2240,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
     this.terminalSectionHeight = constrain(
       getNumber(terminalSectionHeightConfigKey, defaultTerminalSectionHeight)
+    )
+    this.terminalMinimized = getBoolean(terminalMinimizedConfigKey, false)
+    this.terminalExpandedHeight = getNumber(
+      terminalExpandedHeightConfigKey,
+      defaultTerminalSectionHeight
     )
 
     this.updateResizableConstraints()
@@ -5462,6 +5474,33 @@ export class AppStore extends TypedBaseStore<IAppState> {
       value: defaultTerminalSectionHeight,
     }
     localStorage.removeItem(terminalSectionHeightConfigKey)
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
+  public _setTerminalMinimized(minimized: boolean): Promise<void> {
+    if (minimized && !this.terminalMinimized) {
+      // Save current height before minimizing
+      this.terminalExpandedHeight = this.terminalSectionHeight.value
+      setNumber(terminalExpandedHeightConfigKey, this.terminalExpandedHeight)
+      // Set to collapsed height
+      this.terminalSectionHeight = {
+        ...this.terminalSectionHeight,
+        value: collapsedTerminalHeight,
+      }
+      setNumber(terminalSectionHeightConfigKey, collapsedTerminalHeight)
+    } else if (!minimized && this.terminalMinimized) {
+      // Restore to previous height
+      this.terminalSectionHeight = {
+        ...this.terminalSectionHeight,
+        value: this.terminalExpandedHeight,
+      }
+      setNumber(terminalSectionHeightConfigKey, this.terminalExpandedHeight)
+    }
+
+    this.terminalMinimized = minimized
+    setBoolean(terminalMinimizedConfigKey, minimized)
     this.emitUpdate()
 
     return Promise.resolve()

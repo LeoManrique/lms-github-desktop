@@ -10,7 +10,7 @@ import { FilesChangedBadge } from './changes/files-changed-badge'
 import { SelectedCommits, CompareSidebar } from './history'
 import { Resizable, VerticalResizable } from './resizable'
 import { TabBar } from './tab-bar'
-import { Terminal } from './terminal'
+import { Terminal, TerminalHeader } from './terminal'
 import { Shell } from '../lib/shells'
 import { ICustomIntegration } from '../lib/custom-integration'
 import {
@@ -123,6 +123,9 @@ interface IRepositoryViewProps {
   /** The height of the terminal section below the diff view. */
   readonly terminalSectionHeight: IConstrainedValue
 
+  /** Whether the terminal section is minimized/collapsed. */
+  readonly terminalMinimized: boolean
+
   /** The user's selected shell preference */
   readonly selectedShell: Shell
 
@@ -156,6 +159,7 @@ export class RepositoryView extends React.Component<
 
   private readonly changesSidebarRef = React.createRef<ChangesSidebar>()
   private readonly compareSidebarRef = React.createRef<CompareSidebar>()
+  private readonly terminalRef = React.createRef<Terminal>()
 
   private focusHistoryNeeded: boolean = false
   private focusChangesNeeded: boolean = false
@@ -623,7 +627,33 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.refreshRepository(this.props.repository)
   }
 
+  private onTerminalNewSession = async () => {
+    await this.terminalRef.current?.newSession()
+    // Expand if minimized
+    if (this.props.terminalMinimized) {
+      this.props.dispatcher.setTerminalMinimized(false)
+    }
+  }
+
+  private onTerminalToggleMinimize = () => {
+    this.props.dispatcher.setTerminalMinimized(!this.props.terminalMinimized)
+  }
+
+  private onTerminalKillSession = async () => {
+    await this.terminalRef.current?.killSession()
+    // Collapse the terminal
+    if (!this.props.terminalMinimized) {
+      this.props.dispatcher.setTerminalMinimized(true)
+    }
+  }
+
   private renderTerminalSection(): JSX.Element {
+    const { terminalMinimized } = this.props
+    const hasSession = this.terminalRef.current?.hasSession() ?? false
+    const terminalSectionClass = terminalMinimized
+      ? 'terminal-section collapsed'
+      : 'terminal-section'
+
     return (
       <VerticalResizable
         id="terminal-section-resizable"
@@ -638,8 +668,16 @@ export class RepositoryView extends React.Component<
         onReset={this.handleTerminalSectionHeightReset}
         description="Terminal section"
       >
-        <div className="terminal-section">
+        <div className={terminalSectionClass}>
+          <TerminalHeader
+            isMinimized={terminalMinimized}
+            hasSession={hasSession}
+            onNewSession={this.onTerminalNewSession}
+            onToggleMinimize={this.onTerminalToggleMinimize}
+            onKillSession={this.onTerminalKillSession}
+          />
           <Terminal
+            ref={this.terminalRef}
             cwd={this.props.repository.path}
             onCommandComplete={this.onTerminalCommandComplete}
             selectedShell={this.props.selectedShell}
