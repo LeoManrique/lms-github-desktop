@@ -25,7 +25,7 @@ export class AI extends React.Component<IAIPreferencesProps> {
               label="Model"
               value={this.props.claudeModel}
               onValueChanged={this.props.onClaudeModelChanged}
-              placeholder="haiku"
+              placeholder="Model name"
             />
           </Row>
         </fieldset>
@@ -39,7 +39,7 @@ export class AI extends React.Component<IAIPreferencesProps> {
               label="Model"
               value={this.props.ollamaModel}
               onValueChanged={this.props.onOllamaModelChanged}
-              placeholder="tavernari/git-commit-message:latest"
+              placeholder="Model identifier"
             />
           </Row>
           <Row>
@@ -47,7 +47,7 @@ export class AI extends React.Component<IAIPreferencesProps> {
               label="Server URL"
               value={this.props.ollamaServerUrl}
               onValueChanged={this.props.onOllamaServerUrlChanged}
-              placeholder="http://localhost:11434"
+              placeholder="Server address"
             />
           </Row>
         </fieldset>

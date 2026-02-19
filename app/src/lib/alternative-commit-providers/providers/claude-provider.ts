@@ -1,5 +1,8 @@
 import { spawn as spawnProcess } from 'child_process'
-import { BaseAlternativeCommitMessageProvider } from './base-provider'
+import {
+  BaseAlternativeCommitMessageProvider,
+  DEFAULT_TIMEOUT_MS,
+} from './base-provider'
 import { IProviderCommitMessage, ProviderError } from '../common/types'
 import { claude } from '../../../ui/octicons'
 
@@ -106,7 +109,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
   readonly icon = claude
 
   private readonly MAX_DIFF_SIZE = 20 * 1024 * 1024 // 20MB
-  private readonly TIMEOUT_MS = 120000 // 2 minutes
+  private readonly TIMEOUT_MS = DEFAULT_TIMEOUT_MS
   private readonly model: string
   private wslAvailable: boolean | null = null
 
@@ -207,7 +210,7 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
       )
     }
 
-    const prompt = this.buildCommitMessagePrompt(diff)
+    const prompt = this.buildPrompt(diff)
 
     console.log('[Claude CLI] Starting commit message generation...')
     console.log('[Claude CLI] Diff size:', diff.length, 'characters')
@@ -352,29 +355,11 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
         wrapper.result?.substring(0, 300)
       )
 
-      // Extract the result field which contains the actual JSON in markdown code blocks
-      let resultText = wrapper.result || output
+      // Extract the result field which contains the actual commit message JSON
+      const resultText = wrapper.result || output
+      const validated = this.parseCommitMessageJSON(resultText)
 
-      // Remove markdown code blocks if present (```json ... ```)
-      resultText = resultText
-        .replace(/^```json\s*\n?/i, '')
-        .replace(/\n?```\s*$/i, '')
-      console.log(
-        '[Claude CLI] Cleaned result (first 300 chars):',
-        resultText.substring(0, 300)
-      )
-
-      // Parse the actual commit message JSON
-      const parsed = JSON.parse(resultText)
-      console.log('[Claude CLI] Parsed response - Title:', parsed.title)
-      console.log(
-        '[Claude CLI] Parsed response - Description length:',
-        parsed.description?.length || 0
-      )
-
-      const validated = this.validateResponse(parsed)
-
-      console.log('[Claude CLI] ✓ Commit message generated successfully!')
+      console.log('[Claude CLI] Commit message generated successfully!')
       return validated
     } catch (e) {
       console.error('[Claude CLI] ✗ Failed to invoke Claude CLI:', e)
@@ -406,23 +391,4 @@ export class ClaudeProvider extends BaseAlternativeCommitMessageProvider {
     }
   }
 
-  /**
-   * Builds a simple commit message prompt for Claude.
-   */
-  private buildCommitMessagePrompt(diff: string): string {
-    return `You are a Git commit message generator. Analyze the following git diff and generate a commit message.
-
-Return ONLY valid JSON in this exact format:
-{
-  "title": "A 50 character or less summary in imperative mood",
-  "description": "A detailed description of what changed and why"
-}
-
-Git diff:
-\`\`\`diff
-${diff}
-\`\`\`
-
-Generate the commit message as JSON:`
-  }
 }

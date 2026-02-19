@@ -1,10 +1,13 @@
-import { BaseAlternativeCommitMessageProvider } from './base-provider'
+import {
+  BaseAlternativeCommitMessageProvider,
+  DEFAULT_TIMEOUT_MS,
+} from './base-provider'
 import { IProviderCommitMessage, ProviderError } from '../common/types'
 import { ollama } from '../../../ui/octicons'
 
 /**
  * Ollama provider for local commit message generation.
- * Uses specialized git-commit-message model running on localhost.
+ * Works with any instruction-following model available in Ollama.
  */
 export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
   readonly id = 'ollama' as const
@@ -13,8 +16,8 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
 
   private readonly OLLAMA_URL: string
   private readonly MODEL_NAME: string
-  private readonly MAX_DIFF_SIZE = 50 * 1024 * 1024 // 50MB (local = no limit!)
-  private readonly TIMEOUT_MS = 120000 // 2 minutes
+  private readonly MAX_DIFF_SIZE = 50 * 1024 * 1024 // 50MB (local = no strict limit)
+  private readonly TIMEOUT_MS = DEFAULT_TIMEOUT_MS
 
   public constructor(config?: { model?: string; serverUrl?: string }) {
     super()
@@ -23,12 +26,12 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
   }
 
   /**
-   * Check if Ollama is running and has the commit message model.
+   * Check if Ollama is running.
    */
   async isAvailable(): Promise<boolean> {
     try {
       const response = await fetch(`${this.OLLAMA_URL}/api/tags`, {
-        signal: AbortSignal.timeout(5000), // 5 second timeout
+        signal: AbortSignal.timeout(5000),
       })
 
       return response.ok
@@ -38,12 +41,11 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
   }
 
   /**
-   * Generate commit message using Ollama's specialized model.
+   * Generate commit message using any Ollama model.
    */
   async generateCommitMessage(diff: string): Promise<IProviderCommitMessage> {
     this.validateDiff(diff)
 
-    // Check diff size
     if (diff.length > this.MAX_DIFF_SIZE) {
       throw new ProviderError(
         `Diff is too large (${(diff.length / 1024 / 1024).toFixed(1)}MB). ` +
@@ -61,7 +63,7 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
         },
         body: JSON.stringify({
           model: this.MODEL_NAME,
-          prompt: diff,
+          prompt: this.buildPrompt(diff),
           stream: false,
           format: 'json',
         }),
@@ -69,41 +71,13 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
       })
 
       if (!response.ok) {
-        // Try to extract error details from response body
-        let errorMessage = `Ollama server returned error: ${response.status}`
-        try {
-          const errorData = await response.json()
-          if (errorData.error) {
-            errorMessage = `Ollama error: ${errorData.error}`
-          }
-        } catch {
-          // If we can't parse the error body, use the status text
-          if (response.statusText) {
-            errorMessage = `Ollama error (${response.status}): ${response.statusText}`
-          }
-        }
-
-        // Handle specific error cases
-        if (response.status === 404) {
-          throw new ProviderError(
-            `Model "${this.MODEL_NAME}" not found. ` +
-              `Install it with: ollama pull ${this.MODEL_NAME}`,
-            'MODEL_NOT_FOUND',
-            false
-          )
-        }
-
-        throw new ProviderError(
-          errorMessage,
-          'API_ERROR',
-          response.status >= 500 // Retry on 5xx errors
-        )
+        await this.handleHttpError(response)
       }
 
       let data: any
       try {
         data = await response.json()
-      } catch (jsonError) {
+      } catch {
         throw new ProviderError(
           'Ollama returned an invalid JSON response. The server may be experiencing issues.',
           'INVALID_RESPONSE',
@@ -111,7 +85,6 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
         )
       }
 
-      // Check if response field exists
       if (!data.response) {
         throw new ProviderError(
           `Ollama response missing 'response' field. Got: ${JSON.stringify(
@@ -122,46 +95,26 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
         )
       }
 
-      // Parse the response string as JSON
-      let parsed: any
-      try {
-        parsed = JSON.parse(data.response)
-      } catch (parseError) {
-        throw new ProviderError(
-          `Failed to parse Ollama response as JSON. Response was: ${data.response?.substring(
-            0,
-            200
-          )}`,
-          'INVALID_RESPONSE',
-          true
-        )
-      }
-
-      // The tavernari/git-commit-message model returns {message, body, trailers}
-      // We need to map it to {title, description} for our interface
-      const mapped: IProviderCommitMessage = {
-        title: parsed.message || parsed.title,
-        description: parsed.body || parsed.description || '',
-      }
-
-      return this.validateResponse(mapped)
+      return this.parseCommitMessageJSON(data.response)
     } catch (e) {
       if (e instanceof ProviderError) {
-        throw e // Already handled
+        throw e
       }
 
       if (e instanceof TypeError && e.message.includes('fetch')) {
         throw new ProviderError(
-          'Could not connect to Ollama. Make sure Ollama is running ' +
-            'at http://localhost:11434',
+          `Could not connect to Ollama. Make sure Ollama is running at ${this.OLLAMA_URL}`,
           'CONNECTION_ERROR',
           true
         )
       }
 
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+      if (
+        (e as any).name === 'AbortError' ||
+        (e as any).name === 'TimeoutError'
+      ) {
         throw new ProviderError(
-          'Ollama took too long to respond (>120s)',
+          `Ollama took too long to respond (>${this.TIMEOUT_MS / 1000}s)`,
           'TIMEOUT',
           true
         )
@@ -182,5 +135,34 @@ export class OllamaProvider extends BaseAlternativeCommitMessageProvider {
    */
   shouldShowDisclaimer(): boolean {
     return false
+  }
+
+  private async handleHttpError(response: Response): Promise<never> {
+    let errorMessage = `Ollama server returned error: ${response.status}`
+    try {
+      const errorData = await response.json()
+      if (errorData.error) {
+        errorMessage = `Ollama error: ${errorData.error}`
+      }
+    } catch {
+      if (response.statusText) {
+        errorMessage = `Ollama error (${response.status}): ${response.statusText}`
+      }
+    }
+
+    if (response.status === 404) {
+      throw new ProviderError(
+        `Model "${this.MODEL_NAME}" not found. ` +
+          `Install it with: ollama pull ${this.MODEL_NAME}`,
+        'MODEL_NOT_FOUND',
+        false
+      )
+    }
+
+    throw new ProviderError(
+      errorMessage,
+      'API_ERROR',
+      response.status >= 500
+    )
   }
 }
