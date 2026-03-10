@@ -23,7 +23,7 @@ import {
   getLinuxTarGzPath,
 } from './dist-info'
 import { isGitHubActions } from './build-platforms'
-import { existsSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, rmSync, writeFileSync, copyFileSync, chmodSync } from 'fs'
 import { getVersion } from '../app/package-info'
 import { rename } from 'fs/promises'
 import { join } from 'path'
@@ -178,6 +178,13 @@ async function packageLinux() {
   const rpmArch = arch === 'x64' ? 'x86_64' : 'aarch64'
 
   console.log('Packaging for Linux…')
+
+  // Bundle install script into the dist directory
+  const installScriptSrc = path.join(__dirname, '..', 'app', 'static', 'linux', 'install.sh')
+  const installScriptDest = path.join(distPath, 'install.sh')
+  copyFileSync(installScriptSrc, installScriptDest)
+  chmodSync(installScriptDest, 0o755)
+  console.log('Bundled install.sh into dist')
 
   // Create tar.gz archive (always available, no extra dependencies)
   const tarGzPath = getLinuxTarGzPath()
