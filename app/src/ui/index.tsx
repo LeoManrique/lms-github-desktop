@@ -90,13 +90,32 @@ enableSourceMaps()
 
 // Tell dugite where to find the git environment,
 // see https://github.com/desktop/dugite/pull/85
-process.env['LOCAL_GIT_DIRECTORY'] = Path.resolve(__dirname, 'git')
-
-// Ensure that dugite infers the GIT_EXEC_PATH
-// based on the LOCAL_GIT_DIRECTORY env variable
-// instead of just blindly trusting what's set in
-// the current environment. See https://git.io/JJ7KF
-delete process.env.GIT_EXEC_PATH
+//
+// On Linux, use system git for HTTPS compatibility across distros.
+// The bundled git links against libcurl-gnutls (Debian-specific).
+// We query the system git for its exec-path so dugite can find it.
+if (process.platform === 'linux') {
+  const { execFileSync } = require('child_process')
+  try {
+    const gitExecPath = execFileSync('/usr/bin/git', ['--exec-path'], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim()
+    process.env['LOCAL_GIT_DIRECTORY'] = '/usr'
+    process.env['GIT_EXEC_PATH'] = gitExecPath
+  } catch {
+    // System git not available, fall back to bundled git
+    process.env['LOCAL_GIT_DIRECTORY'] = Path.resolve(__dirname, 'git')
+    delete process.env.GIT_EXEC_PATH
+  }
+} else {
+  process.env['LOCAL_GIT_DIRECTORY'] = Path.resolve(__dirname, 'git')
+  // Ensure that dugite infers the GIT_EXEC_PATH
+  // based on the LOCAL_GIT_DIRECTORY env variable
+  // instead of just blindly trusting what's set in
+  // the current environment. See https://git.io/JJ7KF
+  delete process.env.GIT_EXEC_PATH
+}
 
 const startTime = performance.now()
 

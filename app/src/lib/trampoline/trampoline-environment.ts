@@ -11,6 +11,17 @@ import memoizeOne from 'memoize-one'
 import { GitError, getDescriptionForError } from '../git/core'
 import { getDesktopAskpassTrampolineFilename } from 'desktop-trampoline'
 
+/**
+ * On Linux with system git, the bundled git-credential-desktop isn't in
+ * GIT_EXEC_PATH, so we use the full path to the bundled binary.
+ */
+function getCredentialHelperValue(): string {
+  if (process.platform === 'linux' && process.env['LOCAL_GIT_DIRECTORY'] === '/usr') {
+    return Path.resolve(__dirname, 'git', 'libexec', 'git-core', 'git-credential-desktop')
+  }
+  return 'desktop'
+}
+
 const hasRejectedCredentialsForEndpoint = new Map<string, Set<string>>()
 
 export const setHasRejectedCredentialsForEndpoint = (
@@ -140,7 +151,7 @@ export async function withTrampolineEnv<T>(
         //
         // See https://github.com/desktop/desktop/issues/18945
         // See https://github.com/git/git/blob/ed155187b429a/config.c#L664
-        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=desktop'`,
+        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${getCredentialHelperValue()}'`,
 
         GIT_USER_AGENT: await GitUserAgent(),
         ...sshEnv,
