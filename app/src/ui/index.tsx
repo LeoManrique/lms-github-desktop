@@ -103,6 +103,12 @@ if (process.platform === 'linux') {
     }).trim()
     process.env['LOCAL_GIT_DIRECTORY'] = '/usr'
     process.env['GIT_EXEC_PATH'] = gitExecPath
+
+    // Prepend the bundled git's libexec/git-core to PATH so that
+    // git-lfs and other bundled tools are found when using system git.
+    const bundledGitCore = Path.resolve(__dirname, 'git', 'libexec', 'git-core')
+    const currentPath = process.env['PATH'] || ''
+    process.env['PATH'] = `${bundledGitCore}:${currentPath}`
   } catch {
     // System git not available, fall back to bundled git
     process.env['LOCAL_GIT_DIRECTORY'] = Path.resolve(__dirname, 'git')

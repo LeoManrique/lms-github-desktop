@@ -353,6 +353,8 @@ function copyDependencies() {
       : {}
 
   writeFileSync(path.join(outRoot, 'package.json'), JSON.stringify(pkg))
+  // Yarn 4 needs its own yarn.lock to treat out/ as a separate project
+  writeFileSync(path.join(outRoot, 'yarn.lock'), '')
   rmSync(path.resolve(outRoot, 'node_modules'), {
     recursive: true,
     force: true,
