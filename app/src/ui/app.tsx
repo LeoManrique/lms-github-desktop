@@ -203,11 +203,6 @@ const MinuteInMilliseconds = 1000 * 60
 const HourInMilliseconds = MinuteInMilliseconds * 60
 
 /**
- * Check for updates every 4 hours
- */
-const UpdateCheckInterval = 4 * HourInMilliseconds
-
-/**
  * Send usage stats every 4 hours
  */
 const SendStatsInterval = 4 * HourInMilliseconds
@@ -374,19 +369,7 @@ export class App extends React.Component<IAppProps, IAppState> {
 
     this.props.dispatcher.installGlobalLFSFilters(false)
 
-    // We only want to automatically check for updates on beta and prod
-    if (
-      __RELEASE_CHANNEL__ !== 'development' &&
-      __RELEASE_CHANNEL__ !== 'test'
-    ) {
-      setInterval(() => this.checkForUpdates(true), UpdateCheckInterval)
-      this.checkForUpdates(true)
-    } else if (await updateStore.isUpdateShowcase()) {
-      // The only purpose of this call is so we can see the showcase on dev/test
-      // env. Prod and beta environment will trigger this during automatic check
-      // for updates.
-      this.props.dispatcher.setUpdateShowCaseVisibility(true)
-    }
+    // Auto-update disabled
 
     log.info(`launching: ${getVersion()} (${getOS()})`)
     log.info(`execPath: '${process.execPath}'`)

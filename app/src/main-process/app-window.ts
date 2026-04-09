@@ -3,7 +3,6 @@ import {
   app,
   dialog,
   BrowserWindow,
-  autoUpdater,
   nativeTheme,
 } from 'electron'
 import { shell } from '../lib/app-shell'
@@ -27,7 +26,6 @@ import {
   terminateDesktopNotifications,
 } from './notifications'
 import { addTrustedIPCSender } from './trusted-ipc-sender'
-import { getUpdaterGUID } from '../lib/get-updater-guid'
 import { CLIAction } from '../lib/cli-action'
 
 export class AppWindow {
@@ -148,7 +146,6 @@ export class AppWindow {
         return
       }
       nativeTheme.removeAllListeners()
-      autoUpdater.removeAllListeners()
       terminateDesktopNotifications()
     })
   }
@@ -207,7 +204,6 @@ export class AppWindow {
       ipcWebContents.send(this.window.webContents, 'native-theme-updated')
     })
 
-    this.setupAutoUpdater()
   }
 
   /**
@@ -395,56 +391,16 @@ export class AppWindow {
   }
 
   public setupAutoUpdater() {
-    autoUpdater.on('error', (error: Error) => {
-      this.isDownloadingUpdate = false
-      ipcWebContents.send(this.window.webContents, 'auto-updater-error', error)
-    })
-
-    autoUpdater.on('checking-for-update', () => {
-      this.isDownloadingUpdate = false
-      ipcWebContents.send(
-        this.window.webContents,
-        'auto-updater-checking-for-update'
-      )
-    })
-
-    autoUpdater.on('update-available', () => {
-      this.isDownloadingUpdate = true
-      ipcWebContents.send(
-        this.window.webContents,
-        'auto-updater-update-available'
-      )
-    })
-
-    autoUpdater.on('update-not-available', () => {
-      this.isDownloadingUpdate = false
-      ipcWebContents.send(
-        this.window.webContents,
-        'auto-updater-update-not-available'
-      )
-    })
-
-    autoUpdater.on('update-downloaded', () => {
-      this.isDownloadingUpdate = false
-      ipcWebContents.send(
-        this.window.webContents,
-        'auto-updater-update-downloaded'
-      )
-    })
+    // Auto-update disabled
   }
 
-  public async checkForUpdates(url: string) {
-    try {
-      autoUpdater.setFeedURL({ url: await trySetUpdaterGuid(url) })
-      autoUpdater.checkForUpdates()
-    } catch (e) {
-      return e
-    }
+  public async checkForUpdates(_url: string) {
+    // Auto-update disabled
     return undefined
   }
 
   public quitAndInstallUpdate() {
-    autoUpdater.quitAndInstall()
+    // Auto-update disabled
   }
 
   public minimizeWindow() {
@@ -499,17 +455,3 @@ export class AppWindow {
   }
 }
 
-const trySetUpdaterGuid = async (url: string) => {
-  try {
-    const id = await getUpdaterGUID()
-    if (!id) {
-      return url
-    }
-
-    const parsed = new URL(url)
-    parsed.searchParams.set('guid', id)
-    return parsed.toString()
-  } catch (e) {
-    return url
-  }
-}
