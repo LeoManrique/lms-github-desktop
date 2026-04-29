@@ -67,6 +67,7 @@ Return ONLY valid JSON in this exact format:
 Rules:
 - The title MUST be 50 characters or less and use the imperative mood (e.g. "Add", "Fix", "Update")
 - The description should explain what changed and why, not how
+- Write the description in third person and omit articles ("a", "an", "the")
 - Return ONLY the JSON object, no markdown fences, no extra text`
   }
 

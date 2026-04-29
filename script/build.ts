@@ -268,8 +268,12 @@ async function rebuildNativeModules(appPaths: string[]): Promise<void> {
     console.log(`  App path: ${appResourcePath}`)
 
     try {
-      cp.execSync(
-        `npx @electron/rebuild -v ${electronVersion}`,
+      const rebuildCli = require.resolve('@electron/rebuild/lib/cli.js', {
+        paths: [path.join(projectRoot, 'app')],
+      })
+      cp.execFileSync(
+        process.execPath,
+        [rebuildCli, '-v', electronVersion],
         {
           cwd: appResourcePath,
           env: process.env,
